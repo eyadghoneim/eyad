@@ -14,6 +14,10 @@ import { MacroEconomicFilter } from './components/MacroEconomicFilter';
 import { BotOperationsPanel } from './components/BotOperationsPanel';
 import { LiquidationHeatmap } from './components/LiquidationHeatmap';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
+import { MacroLiquidityPanel } from './components/MacroLiquidityPanel';
+import { StablecoinFlowPanel } from './components/StablecoinFlowPanel';
+import { DexVolumePanel } from './components/DexVolumePanel';
+import { OpenInterestPanel } from './components/OpenInterestPanel';
 import { 
   AIReasoning, 
   AlertConfig, 
@@ -837,6 +841,15 @@ export function App() {
               multiAssetPrices={multiAssetData}
             />
 
+            <OpenInterestPanel
+              currentAsset={currentAsset}
+              lang={lang}
+            />
+
+            <DexVolumePanel
+              lang={lang}
+            />
+
             {/* Top: Liquidation Levels & Derivatives Open Interest */}
             <LiquidationHeatmap
               currentAsset={currentAsset}
@@ -997,6 +1010,14 @@ export function App() {
                 <MacroEconomicFilter
                   macroStatus={macroStatus}
                   onRefresh={fetchMacroStatus}
+                  lang={lang}
+                />
+
+                <MacroLiquidityPanel
+                  lang={lang}
+                />
+
+                <StablecoinFlowPanel
                   lang={lang}
                 />
               </div>

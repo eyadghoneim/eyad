@@ -5,6 +5,13 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { buildDeterministicSignal } from './botStrategy.ts';
 import {
+  getLlamaChainHistory,
+  getLlamaChainsOverview,
+  getLlamaDexOverview,
+  getLlamaStablecoinChains,
+  getOpenInterestOverview,
+} from './llamaService.ts';
+import {
   appendBotLog,
   appendNotification,
   appendSignal,
@@ -310,7 +317,53 @@ app.get('/api/market/all-assets', async (req, res) => {
   return res.json({ success: true, assets: fallbacks, source: 'Fallback Local Feed' });
 });
 
-// 2.6 Live Order Book & Whale Liquidity Depth Endpoint
+// 2.6 DefiLlama Liquidity & Activity Proxy Routes
+app.get('/api/llama/chains', async (_req, res) => {
+  try {
+    const payload = await getLlamaChainsOverview();
+    return res.json(payload);
+  } catch (error: any) {
+    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch chain liquidity overview' });
+  }
+});
+
+app.get('/api/llama/chains/:chain/history', async (req, res) => {
+  try {
+    const payload = await getLlamaChainHistory(String(req.params.chain || 'ethereum'));
+    return res.json(payload);
+  } catch (error: any) {
+    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch chain TVL history' });
+  }
+});
+
+app.get('/api/llama/stablecoins/chains', async (_req, res) => {
+  try {
+    const payload = await getLlamaStablecoinChains();
+    return res.json(payload);
+  } catch (error: any) {
+    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch stablecoin chain overview' });
+  }
+});
+
+app.get('/api/llama/dexs/overview', async (_req, res) => {
+  try {
+    const payload = await getLlamaDexOverview();
+    return res.json(payload);
+  } catch (error: any) {
+    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch DEX overview' });
+  }
+});
+
+app.get('/api/llama/open-interest/overview', async (_req, res) => {
+  try {
+    const payload = await getOpenInterestOverview();
+    return res.json(payload);
+  } catch (error: any) {
+    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch derivatives overview' });
+  }
+});
+
+// 2.7 Live Order Book & Whale Liquidity Depth Endpoint
 app.get('/api/market/depth', async (req, res) => {
   const asset = (req.query.asset as string) || 'BTC';
   let symbol = 'BTCUSDT';

@@ -119,7 +119,7 @@ export const LiquidationHeatmap: React.FC<LiquidationHeatmapProps> = ({
               <Flame className="w-5 h-5" />
             </span>
             <h2 className="text-base sm:text-lg font-bold font-mono text-white flex items-center gap-2">
-              {lang === 'ar' ? `خريطة التصفيات والفائدة المفتوحة (${currentAsset})` : `${currentAsset} Liquidation Heatmap & Open Interest`}
+              {lang === 'ar' ? `خريطة التصفيات والسيولة الحرجة (${currentAsset})` : `${currentAsset} Liquidation Heatmap & Critical Liquidity`}
               <span className="text-[10px] px-2 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/30">
                 PRO RADAR
               </span>
