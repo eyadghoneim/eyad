@@ -37,7 +37,6 @@ interface LiveSignalPanelProps {
   isAnalyzing: boolean;
   onTriggerGeminiAnalysis: () => void;
   onSendTelegramAlert: () => void;
-  onSendEmailAlert?: () => void;
 }
 
 export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({

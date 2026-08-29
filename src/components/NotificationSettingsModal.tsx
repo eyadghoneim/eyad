@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Send, Bell, CheckCircle2, AlertCircle, Smartphone, Globe, ShieldCheck, Radio } from 'lucide-react';
 import { AlertConfig } from '../types';
+import { getBotAdminHeaders } from '../utils/botAdminAuth';
 
 interface NotificationSettingsModalProps {
   isOpen: boolean;
@@ -84,7 +85,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
     try {
       const res = await fetch('/api/notifications/telegram-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           token: config.telegramToken.trim(),
           chatId: config.telegramChatId.trim(),
@@ -114,7 +115,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
 
     fetch('/api/bot/config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
     }).catch(() => {});
     onClose();

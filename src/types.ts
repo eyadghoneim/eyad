@@ -248,8 +248,6 @@ export interface AlertConfig {
   telegramToken: string;
   telegramChatId: string;
   telegramEnabled: boolean;
-  emailAddress: string;
-  emailEnabled: boolean;
   soundEnabled: boolean;
   autoScanIntervalSeconds: number;
   lastAlertSentAt?: number;
@@ -257,7 +255,6 @@ export interface AlertConfig {
   serverHasTelegramChatId?: boolean;
   maskedTelegramToken?: string;
   maskedTelegramChatId?: string;
-  serverEmailMasked?: string;
 }
 
 export interface PaperPosition {
@@ -342,8 +339,6 @@ export interface MacroNewsStatus {
 export interface BotSafeConfig {
   active: boolean;
   telegramEnabled: boolean;
-  emailEnabled: boolean;
-  emailAddress: string;
   scanIntervalSeconds: number;
   telegramConfigured: boolean;
   maskedTelegramToken: string;

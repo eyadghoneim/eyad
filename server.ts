@@ -20,7 +20,6 @@ import {
   listSignals,
   loadBotConfig,
   maskChatId,
-  maskEmail,
   saveBotConfig,
   ServerBotLog,
   ServerBotConfig,
@@ -1087,59 +1086,8 @@ app.post('/api/notifications/telegram-test', async (req, res) => {
   }
 });
 
-// 8. Email Notification Dispatch Simulator / Mailer
-app.post('/api/notifications/email-send', async (req, res) => {
-  const { email, signal, price } = req.body || {};
-  const effectiveEmail = readOptionalString(email, 254) || botConfig.emailAddress;
-  if (!effectiveEmail) {
-    return res.status(400).json({ success: false, error: 'Email address is required' });
-  }
-
-  console.log(`[EMAIL DISPATCH] Sent BTC Spot Signal to ${effectiveEmail} (Action: ${signal?.spotAction || 'BUY'} at $${price})`);
-  appendNotification({
-    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    timestamp: Date.now(),
-    channel: 'EMAIL',
-    targetMasked: maskEmail(effectiveEmail),
-    asset: signal?.asset,
-    status: 'SENT',
-    message: 'Email notification simulated successfully',
-  });
-  addServerLog('ALERT', `Email notification simulated for ${maskEmail(effectiveEmail)}`, signal?.asset);
-  return res.json({
-    success: true,
-    message: `تم إرسال إشعار الإشارة الفورية للبريد الإلكتروني ${effectiveEmail} بنجاح!`,
-    timestamp: Date.now(),
-  });
-});
-
-// 8.1 Email Test Endpoint (Fixes client mismatch)
-app.post('/api/notifications/email-test', async (req, res) => {
-  const { email } = req.body || {};
-  const effectiveEmail = readOptionalString(email, 254) || botConfig.emailAddress;
-  if (!effectiveEmail) {
-    return res.status(400).json({ success: false, error: 'Email address is required' });
-  }
-
-  console.log(`[EMAIL TEST DISPATCH] Test ping dispatched successfully to: ${effectiveEmail}`);
-  appendNotification({
-    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    timestamp: Date.now(),
-    channel: 'EMAIL',
-    targetMasked: maskEmail(effectiveEmail),
-    status: 'TEST',
-    message: 'Email test notification simulated successfully',
-  });
-  addServerLog('INFO', `Email test notification simulated for ${maskEmail(effectiveEmail)}`);
-  return res.json({
-    success: true,
-    message: `تم إرسال رسالة اختبار تجريبية إلى بريدك الإلكتروني (${effectiveEmail}) بنجاح!`,
-    timestamp: Date.now(),
-  });
-});
-
 // =========================================================================
-// 9. SERVER-SIDE MARKET WATCHER & STRATEGY DAEMON (24/7 BACKGROUND WORKER)
+// 8. SERVER-SIDE MARKET WATCHER & STRATEGY DAEMON (24/7 BACKGROUND WORKER)
 // =========================================================================
 
 let botConfig: ServerBotConfig = loadBotConfig();
@@ -1434,15 +1382,13 @@ app.get('/api/bot/config', (req, res) => {
 });
 
 app.post('/api/bot/config', (req, res) => {
-  const { active, telegramEnabled, telegramToken, telegramChatId, emailEnabled, emailAddress, scanIntervalSeconds } = req.body || {};
+  const { active, telegramEnabled, telegramToken, telegramChatId, scanIntervalSeconds } = req.body || {};
   const nextConfig: ServerBotConfig = {
     ...botConfig,
     active: readOptionalBoolean(active) ?? botConfig.active,
     telegramEnabled: readOptionalBoolean(telegramEnabled) ?? botConfig.telegramEnabled,
     telegramToken: readOptionalString(telegramToken, 512) || botConfig.telegramToken,
     telegramChatId: readOptionalString(telegramChatId, 160) || botConfig.telegramChatId,
-    emailEnabled: readOptionalBoolean(emailEnabled) ?? botConfig.emailEnabled,
-    emailAddress: readOptionalString(emailAddress, 254) || botConfig.emailAddress,
     scanIntervalSeconds: readOptionalInteger(scanIntervalSeconds, 10, 86400) ?? botConfig.scanIntervalSeconds,
   };
 

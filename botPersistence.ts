@@ -7,8 +7,6 @@ export interface ServerBotConfig {
   telegramEnabled: boolean;
   telegramToken: string;
   telegramChatId: string;
-  emailEnabled: boolean;
-  emailAddress: string;
   scanIntervalSeconds: number;
 }
 
@@ -70,7 +68,7 @@ export interface PersistenceHealth {
 export interface NotificationRecord {
   id: string;
   timestamp: number;
-  channel: 'TELEGRAM' | 'EMAIL';
+  channel: 'TELEGRAM';
   targetMasked: string;
   asset?: string;
   status: 'SENT' | 'FAILED' | 'TEST';
@@ -83,8 +81,6 @@ export const DEFAULT_BOT_CONFIG: ServerBotConfig = {
   telegramEnabled: false,
   telegramToken: '',
   telegramChatId: '',
-  emailEnabled: false,
-  emailAddress: '',
   scanIntervalSeconds: 60,
 };
 
@@ -220,8 +216,6 @@ function normalizeConfig(row: any): ServerBotConfig {
     telegramEnabled: Boolean(row.telegram_enabled),
     telegramToken: String(row.telegram_token || ''),
     telegramChatId: String(row.telegram_chat_id || ''),
-    emailEnabled: false,
-    emailAddress: '',
     scanIntervalSeconds: Math.max(10, Number(row.scan_interval_seconds) || DEFAULT_BOT_CONFIG.scanIntervalSeconds),
   };
 }
@@ -237,8 +231,6 @@ export function saveBotConfig(nextConfig: ServerBotConfig): ServerBotConfig {
     telegramEnabled: Boolean(nextConfig.telegramEnabled),
     telegramToken: String(nextConfig.telegramToken || '').trim(),
     telegramChatId: String(nextConfig.telegramChatId || '').trim(),
-    emailEnabled: false,
-    emailAddress: '',
     scanIntervalSeconds: Math.max(10, Math.floor(Number(nextConfig.scanIntervalSeconds) || DEFAULT_BOT_CONFIG.scanIntervalSeconds)),
   };
 
@@ -466,19 +458,10 @@ export function maskChatId(chatId: string) {
   return `${chatId.slice(0, 2)}••••${chatId.slice(-2)}`;
 }
 
-export function maskEmail(email: string) {
-  if (!email || !email.includes('@')) return '';
-  const [name, domain] = email.split('@');
-  const maskedName = name.length <= 2 ? `${name[0] || ''}•` : `${name.slice(0, 2)}•••`;
-  return `${maskedName}@${domain}`;
-}
-
 export function getSafeConfigForClient(config: ServerBotConfig) {
   return {
     active: config.active,
     telegramEnabled: config.telegramEnabled,
-    emailEnabled: false,
-    emailAddress: '',
     scanIntervalSeconds: config.scanIntervalSeconds,
     telegramConfigured: Boolean(config.telegramToken && config.telegramChatId),
     maskedTelegramToken: maskToken(config.telegramToken),
