@@ -18,6 +18,8 @@ import { MacroLiquidityPanel } from './components/MacroLiquidityPanel';
 import { StablecoinFlowPanel } from './components/StablecoinFlowPanel';
 import { DexVolumePanel } from './components/DexVolumePanel';
 import { OpenInterestPanel } from './components/OpenInterestPanel';
+import { BridgeFlowPanel } from './components/BridgeFlowPanel';
+import { LiquidityRegimeScorecard } from './components/LiquidityRegimeScorecard';
 import { 
   AIReasoning, 
   AlertConfig, 
@@ -26,6 +28,7 @@ import {
   ElliottWaveAnalysis, 
   IndicatorValues, 
   LearningState, 
+  LiquidityRegimeScorecard as LiquidityRegimeData,
   LiquiditySentimentData, 
   MacroNewsStatus,
   PaperAccount,
@@ -45,6 +48,47 @@ import { evaluatePaperPositionsAuto, autoOpenPaperTradeOnSignal, AutoTradeExecut
 import { getBotAdminHeaders } from './utils/botAdminAuth';
 import { Activity, BarChart2, BrainCircuit, Sparkles, CheckCircle2, ShieldCheck, Code2, Wallet, Layers, Calendar, Flame, Columns, Radio } from 'lucide-react';
 import confetti from 'canvas-confetti';
+
+function applyLiquidityRegimeToSignal(signal: AIReasoning, regime: LiquidityRegimeData | null, lang: 'ar' | 'en'): AIReasoning {
+  if (!signal || !regime) return signal;
+
+  const previousAdjustment = signal.liquidityRegime?.totalAdjustment || 0;
+  const baseConviction = (signal.convictionScore || 0) - previousAdjustment;
+  const adjustedConviction = Math.max(0, Math.min(100, Math.round(baseConviction + (regime.totalAdjustment || 0))));
+  const signalType = adjustedConviction >= 85
+    ? 'STRONG_BUY'
+    : adjustedConviction >= 70
+    ? 'BUY'
+    : adjustedConviction <= 18
+    ? 'STRONG_SELL'
+    : adjustedConviction <= 35
+    ? 'SELL'
+    : 'HOLD';
+  const spotAction = adjustedConviction >= 70
+    ? 'SPOT_BUY'
+    : adjustedConviction <= 35
+    ? 'SPOT_SELL_ALL'
+    : 'SPOT_HOLD';
+
+  const overlayLineAr = `طبقة السيولة الكلية عدّلت الثقة بمقدار ${regime.totalAdjustment > 0 ? '+' : ''}${regime.totalAdjustment} نقطة (${regime.verdict}).`;
+  const overlayLineEn = `Liquidity regime overlay adjusted conviction by ${regime.totalAdjustment > 0 ? '+' : ''}${regime.totalAdjustment} points (${regime.verdict}).`;
+  const cleanSummaryAr = (signal.summaryAr || '').replace(/\s*طبقة السيولة الكلية عدّلت الثقة بمقدار .*?\./g, '').trim();
+  const cleanSummaryEn = (signal.summaryEn || '').replace(/\s*Liquidity regime overlay adjusted conviction by .*?\./g, '').trim();
+  const overlayFactor = lang === 'ar'
+    ? `طبقة السيولة: ${regime.summaryAr}`
+    : `Liquidity overlay: ${regime.summaryEn}`;
+
+  return {
+    ...signal,
+    convictionScore: adjustedConviction,
+    signalType,
+    spotAction,
+    summaryAr: `${cleanSummaryAr} ${overlayLineAr}`.trim(),
+    summaryEn: `${cleanSummaryEn} ${overlayLineEn}`.trim(),
+    confluenceFactors: [overlayFactor, ...(signal.confluenceFactors || []).filter((item) => !item.startsWith('طبقة السيولة:') && !item.startsWith('Liquidity overlay:'))].slice(0, 8),
+    liquidityRegime: regime,
+  };
+}
 
 export function App() {
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
@@ -381,6 +425,18 @@ export function App() {
 
   // Macro Economic Filter State
   const [macroStatus, setMacroStatus] = useState<MacroNewsStatus | null>(null);
+  const [liquidityRegime, setLiquidityRegime] = useState<LiquidityRegimeData | null>(null);
+
+  const fetchLiquidityRegime = useCallback(async (asset: SupportedAsset = currentAsset) => {
+    try {
+      const res = await fetch(`/api/llama/liquidity-regime?asset=${asset}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setLiquidityRegime(data);
+    } catch (e) {
+      console.warn('Liquidity regime fetch failed', e);
+    }
+  }, [currentAsset]);
 
   const fetchMacroStatus = useCallback(async () => {
     try {
@@ -396,9 +452,13 @@ export function App() {
 
   useEffect(() => {
     fetchMacroStatus();
-    const interval = setInterval(fetchMacroStatus, 60000);
+    fetchLiquidityRegime(currentAsset);
+    const interval = setInterval(() => {
+      fetchMacroStatus();
+      fetchLiquidityRegime(currentAsset);
+    }, 60000);
     return () => clearInterval(interval);
-  }, [fetchMacroStatus]);
+  }, [fetchMacroStatus, fetchLiquidityRegime, currentAsset]);
 
   // Learning Engine State
   const [learningState, setLearningState] = useState<LearningState>(() => {
@@ -483,6 +543,7 @@ export function App() {
     summaryAr: 'إشارة شراء سبوت متطابقة بالكامل مع استراتيجية EYAD BTC وقواعد الدخول الصارمة (درجة الجودة 85/100). السعر يرتد من دعم EMA21 مع تأكيد الحجم ومؤشر ADX الصاعد. وقف الخسارة الصارم عند 2×ATR والهدف الأول TP1 عند 4×ATR (بيع 50% جزئياً).',
     summaryEn: 'Spot Buy signal compliant with EYAD BTC Strategy and strict Entry Quality Gate (Score 85/100). Price retests EMA21 with volume confirmation and ADX > 20. Strict 2x ATR SL and 4x ATR TP1 (50% partial exit) active.',
     timestamp: new Date().toISOString(),
+    liquidityRegime: null,
   });
 
   // Sound chime helper
@@ -520,6 +581,7 @@ export function App() {
           sentiment,
           learningState,
           asset: currentAsset,
+          liquidityRegime,
         }),
       });
 
@@ -527,7 +589,7 @@ export function App() {
         const data = await res.json();
         const signalData = data.signal || data.data;
         if (signalData) {
-          setAiSignal(signalData);
+          setAiSignal(applyLiquidityRegimeToSignal(signalData, liquidityRegime, lang));
           playAlertSound();
           try {
             confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
@@ -540,6 +602,10 @@ export function App() {
       setIsAnalyzingAI(false);
     }
   };
+
+  useEffect(() => {
+    setAiSignal((prev) => (prev ? applyLiquidityRegimeToSignal(prev, liquidityRegime, lang) : prev));
+  }, [liquidityRegime, lang]);
 
   // Automated Paper Trading Engine Evaluation & Execution Loop (Auto-Pilot)
   useEffect(() => {
@@ -807,6 +873,11 @@ export function App() {
               onSendTelegramAlert={handleSendTelegram}
             />
 
+            <LiquidityRegimeScorecard
+              lang={lang}
+              scorecard={liquidityRegime}
+            />
+
             {/* Interactive Candlestick Chart with SMC & Wave Overlays */}
             <InteractiveChart
               candles={candles}
@@ -843,6 +914,10 @@ export function App() {
 
             <OpenInterestPanel
               currentAsset={currentAsset}
+              lang={lang}
+            />
+
+            <BridgeFlowPanel
               lang={lang}
             />
 
@@ -1018,6 +1093,10 @@ export function App() {
                 />
 
                 <StablecoinFlowPanel
+                  lang={lang}
+                />
+
+                <BridgeFlowPanel
                   lang={lang}
                 />
               </div>

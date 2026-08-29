@@ -1,4 +1,4 @@
-import { AIReasoning, Candle, SupportedAsset } from './src/types.ts';
+import type { AIReasoning, Candle, LiquidityRegimeScorecard, SupportedAsset } from './src/types.ts';
 import { analyzeElliottWave } from './src/utils/elliottWave.ts';
 import { analyzeSMC } from './src/utils/smcAnalysis.ts';
 import { calculateAllIndicators } from './src/utils/technicalAnalysis.ts';
@@ -7,6 +7,7 @@ export interface DeterministicSignalContext {
   asset: SupportedAsset;
   candles: Candle[];
   change24h: number;
+  liquidityRegime?: LiquidityRegimeScorecard | null;
 }
 
 export interface DeterministicSignalResult {
@@ -24,7 +25,11 @@ const assetNameMap: Record<SupportedAsset, { ar: string; en: string }> = {
   PAXG: { ar: 'باكس جولد - الذهب الرقمي', en: 'Pax Gold' },
 };
 
-export function buildDeterministicSignal({ asset, candles, change24h }: DeterministicSignalContext): DeterministicSignalResult {
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function buildDeterministicSignal({ asset, candles, change24h, liquidityRegime }: DeterministicSignalContext): DeterministicSignalResult {
   const indicators = calculateAllIndicators(candles);
   const smc = analyzeSMC(candles);
   const elliott = analyzeElliottWave(candles);
@@ -107,7 +112,13 @@ export function buildDeterministicSignal({ asset, candles, change24h }: Determin
     reasons.push('24h momentum negative');
   }
 
-  score = Math.max(0, Math.min(100, Math.round(score)));
+  if (liquidityRegime) {
+    score += liquidityRegime.totalAdjustment;
+    reasons.push(`Liquidity regime overlay ${liquidityRegime.totalAdjustment >= 0 ? '+' : ''}${liquidityRegime.totalAdjustment}: ${liquidityRegime.summaryEn}`);
+    liquidityRegime.highlightsEn.slice(0, 2).forEach((highlight) => reasons.push(`Liquidity: ${highlight}`));
+  }
+
+  score = clamp(Math.round(score), 0, 100);
 
   let signalType: AIReasoning['signalType'] | 'NO_TRADE' = 'HOLD';
   let spotAction: AIReasoning['spotAction'] = 'SPOT_HOLD';
@@ -139,6 +150,11 @@ export function buildDeterministicSignal({ asset, candles, change24h }: Determin
     summaryEn = `Hold/Wait state on ${assetNameMap[asset].en}: some factors are constructive, but confluence is not complete yet.`;
   }
 
+  if (liquidityRegime) {
+    summaryAr += ` ${liquidityRegime.summaryAr}`;
+    summaryEn += ` ${liquidityRegime.summaryEn}`;
+  }
+
   const entryPrice = Number(price.toFixed(2));
   const stopLoss = spotAction === 'SPOT_BUY'
     ? Number(Math.max(price - atr * 2, price * 0.92).toFixed(2))
@@ -167,9 +183,13 @@ export function buildDeterministicSignal({ asset, candles, change24h }: Determin
     summaryAr,
     summaryEn,
     confluenceFactors: reasons,
-    riskWarningAr: 'سبوت فقط — لا فتح لصفقات برافعة، والالتزام بوقف الخسارة إلزامي.',
-    riskWarningEn: 'Spot only — no leverage, and stop-loss discipline is mandatory.',
-    modelUsed: 'EYAD Server Deterministic Strategy Engine',
+    riskWarningAr: liquidityRegime?.verdict === 'RISK_OFF'
+      ? 'السيولة الكلية ضعيفة نسبياً: إن تم الدخول فيكون بحجم أصغر مع تشديد وقف الخسارة. سبوت فقط.'
+      : 'سبوت فقط — لا فتح لصفقات برافعة، والالتزام بوقف الخسارة إلزامي.',
+    riskWarningEn: liquidityRegime?.verdict === 'RISK_OFF'
+      ? 'Macro liquidity is soft: if entering, reduce size and tighten risk controls. Spot only.'
+      : 'Spot only — no leverage, and stop-loss discipline is mandatory.',
+    modelUsed: liquidityRegime ? 'EYAD Server Deterministic Strategy Engine + Liquidity Regime' : 'EYAD Server Deterministic Strategy Engine',
     generatedAt: Date.now(),
     asset,
     entryQualityScore: score,
@@ -178,9 +198,17 @@ export function buildDeterministicSignal({ asset, candles, change24h }: Determin
     whaleSentiment: change24h >= 1.5 ? 'ACCUMULATION' : change24h <= -2 ? 'DISTRIBUTION' : 'NEUTRAL',
     adxTrend: indicators.adx >= 25 ? 'STRONG_TREND' : 'WEAK_CHOPPY',
     status: 'READY' as const,
+    liquidityRegime: liquidityRegime || undefined,
   };
 
-  const dedupHash = [asset, signal.signalType, signal.spotAction, signal.entryQualityStage, Math.round(change24h * 10)].join('|');
+  const dedupHash = [
+    asset,
+    signal.signalType,
+    signal.spotAction,
+    signal.entryQualityStage,
+    Math.round(change24h * 10),
+    liquidityRegime?.signature || 'no-liquidity-regime',
+  ].join('|');
 
   return {
     signal,

@@ -113,11 +113,42 @@ export interface LiquiditySentimentData {
 
 export interface ProtectionLayerStatus {
   id: string;
-  name: string;
-  nameAr: string;
+  name?: string;
+  nameAr?: string;
+  passed?: boolean;
+  reasonAr?: string;
+  reasonEn?: string;
+  status?: 'ACTIVE' | 'INACTIVE' | 'BLOCKED';
+  triggered?: boolean;
+  details?: string;
+}
+
+export interface EntryQualityScoreBreakdown {
+  ema21Score: number;
+  rejectionScore: number;
+  volumeScore: number;
+  trendScore: number;
+  signalScore: number;
+  totalScore: number;
   passed: boolean;
-  reasonAr: string;
-  reasonEn: string;
+}
+
+export interface LiquidityRegimeScorecard {
+  signature: string;
+  verdict: 'RISK_ON' | 'NEUTRAL' | 'RISK_OFF';
+  totalAdjustment: number;
+  macroScore: number;
+  stablecoinScore: number;
+  dexScore: number;
+  openInterestScore: number;
+  bridgeScore: number;
+  asset?: SupportedAsset;
+  summaryAr: string;
+  summaryEn: string;
+  highlightsAr: string[];
+  highlightsEn: string[];
+  updatedAt: number;
+  source: string[];
 }
 
 export interface AIReasoning {
@@ -138,13 +169,15 @@ export interface AIReasoning {
   modelUsed: string;
   generatedAt: number;
   // Strategy specific extensions
-  entryQualityScore?: number;
+  entryQualityScore?: number | EntryQualityScoreBreakdown;
   entryQualityPassed?: boolean;
   entryQualityStage?: 'ideal' | 'good' | 'wait' | 'skip';
   protectionLayers?: ProtectionLayerStatus[];
   whaleSentiment?: 'ACCUMULATION' | 'DISTRIBUTION' | 'NEUTRAL';
   adxTrend?: 'STRONG_TREND' | 'WEAK_CHOPPY';
   asset?: SupportedAsset;
+  timestamp?: string;
+  liquidityRegime?: LiquidityRegimeScorecard;
 }
 
 export interface TradeRecord {

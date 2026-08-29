@@ -5,6 +5,8 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { buildDeterministicSignal } from './botStrategy.ts';
 import {
+  getBridgeFlowOverview,
+  getLiquidityRegimeSnapshot,
   getLlamaChainHistory,
   getLlamaChainsOverview,
   getLlamaDexOverview,
@@ -359,7 +361,26 @@ app.get('/api/llama/open-interest/overview', async (_req, res) => {
     const payload = await getOpenInterestOverview();
     return res.json(payload);
   } catch (error: any) {
-    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch derivatives overview' });
+    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch open-interest overview' });
+  }
+});
+
+app.get('/api/llama/bridges/flows', async (_req, res) => {
+  try {
+    const payload = await getBridgeFlowOverview();
+    return res.json(payload);
+  } catch (error: any) {
+    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch bridge-flow overview' });
+  }
+});
+
+app.get('/api/llama/liquidity-regime', async (req, res) => {
+  try {
+    const asset = String(req.query.asset || 'BTC').toUpperCase();
+    const payload = await getLiquidityRegimeSnapshot(asset as any);
+    return res.json(payload);
+  } catch (error: any) {
+    return res.status(502).json({ success: false, error: error?.message || 'Failed to fetch liquidity regime snapshot' });
   }
 });
 
@@ -695,7 +716,8 @@ async function callGeminiWithResilience(prompt: string, temperature = 0.2) {
 // 4. Gemini AI Spot Signal Deep Synthesis Endpoint
 app.post('/api/gemini/analyze-signal', async (req, res) => {
   try {
-    const { asset = 'BTC', price = 79473, indicators, smc, elliott, sentiment, learningState } = req.body;
+    const { asset = 'BTC', price = 79473, indicators, smc, elliott, sentiment, learningState, liquidityRegime: providedLiquidityRegime } = req.body;
+    const liquidityRegime = providedLiquidityRegime || await getLiquidityRegimeSnapshot(asset as any);
 
     const assetNameMap: Record<string, string> = {
       BTC: 'البتكوين (Bitcoin - BTC/USDT)',
@@ -731,6 +753,11 @@ app.post('/api/gemini/analyze-signal', async (req, res) => {
   * توجه السيولة التراكمية CVD: ${sentiment?.cvdTrend || 'RISING'}
 - ذاكرة التعلم الذاتي للبوت:
   * الساعات المحظورة بسبب خسائر سابقة: ${learningState?.bannedTradingHours?.join(', ') || 'لا يوجد'}
+- طبقة سيولة إضافية (Liquidity Regime Overlay):
+  * الحكم العام: ${liquidityRegime?.verdict || 'NEUTRAL'}
+  * تعديل الثقة: ${liquidityRegime?.totalAdjustment || 0}
+  * الملخص: ${liquidityRegime?.summaryAr || 'لا يوجد'}
+  * أبرز النقاط: ${(liquidityRegime?.highlightsAr || []).join(' | ') || 'لا يوجد'}
 
 المطلوب منك:
 1. توليد تقييم حاسم وشامل لصفقة السبوت (STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL).
@@ -787,8 +814,9 @@ app.post('/api/gemini/analyze-signal', async (req, res) => {
           ],
           riskWarningAr: parsed.riskWarningAr || 'سبوت فقط: بيع كامل الكمية عند كسر وقف الخسارة.',
           riskWarningEn: parsed.riskWarningEn || 'Spot Only: Sell holdings on stop loss invalidation.',
-          modelUsed: geminiResult.modelUsed,
+          modelUsed: `${geminiResult.modelUsed} + Liquidity Regime Overlay`,
           generatedAt: Date.now(),
+          liquidityRegime,
         };
 
         return res.json({
@@ -824,6 +852,7 @@ app.post('/api/gemini/analyze-signal', async (req, res) => {
       riskWarningEn: 'Capital Preservation First: Avoid opening new positions until AI models restore full confluence.',
       modelUsed: 'Safety Gate (Degraded / No-Trade Mode)',
       generatedAt: Date.now(),
+      liquidityRegime,
     };
 
     return res.json({
@@ -852,6 +881,7 @@ app.post('/api/gemini/analyze-signal', async (req, res) => {
       riskWarningEn: 'Do not trade during connectivity degradation.',
       modelUsed: 'Safety Interceptor',
       generatedAt: Date.now(),
+      liquidityRegime: req.body?.liquidityRegime,
     };
     return res.json({
       success: true,
@@ -1266,7 +1296,8 @@ async function executeBackgroundMarketScan() {
       const tickerItem = tickerMap.get(symbol);
       const lastPrice = Number(tickerItem?.lastPrice || candles[candles.length - 1].close || 0);
       const priceChangePct = Number(tickerItem?.priceChangePercent || 0);
-      const signalResult = buildDeterministicSignal({ asset: assetKey as any, candles, change24h: priceChangePct });
+      const liquidityRegime = await getLiquidityRegimeSnapshot(assetKey as any);
+      const signalResult = buildDeterministicSignal({ asset: assetKey as any, candles, change24h: priceChangePct, liquidityRegime });
       const signal = signalResult.signal;
       const runtimeState = getOrCreateRuntimeAssetState(assetKey);
       const now = Date.now();
@@ -1300,6 +1331,7 @@ async function executeBackgroundMarketScan() {
             smc: signalResult.smc,
             elliott: signalResult.elliott,
             reasons: signalResult.reasons,
+            liquidityRegime,
           }),
           dedupHash: signalResult.dedupHash,
         });
