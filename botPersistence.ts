@@ -40,7 +40,34 @@ export interface PersistedBotSignal {
   dedupHash: string;
 }
 
-export interface BotNotificationDelivery {
+export interface AssetRuntimeState {
+  asset: string;
+  lastKnownPrice: number;
+  lastAlertSentAt: number;
+  lastSignalHash: string;
+}
+
+export interface BotSignalStats {
+  totalSignals: number;
+  actionableSignals: number;
+  buySignals: number;
+  sellSignals: number;
+  byAsset: Record<string, number>;
+  lastSignalAt: number;
+}
+
+export interface PersistenceHealth {
+  databasePath: string;
+  databaseSizeBytes: number;
+  walSizeBytes: number;
+  signalRows: number;
+  logRows: number;
+  assetStateRows: number;
+  lastPrunedAt: number;
+  schemaVersion: number;
+}
+
+export interface NotificationRecord {
   id: string;
   timestamp: number;
   channel: 'TELEGRAM' | 'EMAIL';
@@ -49,13 +76,6 @@ export interface BotNotificationDelivery {
   status: 'SENT' | 'FAILED' | 'TEST';
   message: string;
   errorMessage?: string;
-}
-
-export interface AssetRuntimeState {
-  asset: string;
-  lastKnownPrice: number;
-  lastAlertSentAt: number;
-  lastSignalHash: string;
 }
 
 export const DEFAULT_BOT_CONFIG: ServerBotConfig = {
@@ -68,6 +88,10 @@ export const DEFAULT_BOT_CONFIG: ServerBotConfig = {
   scanIntervalSeconds: 60,
 };
 
+const DB_SCHEMA_VERSION = 2;
+const MAX_LOG_ROWS = 2000;
+const MAX_SIGNAL_ROWS = 4000;
+
 const dataDir = path.join(process.cwd(), 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 const dbPath = path.join(dataDir, 'eyad-bot.sqlite');
@@ -76,8 +100,14 @@ const db = new DatabaseSync(dbPath);
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
-  PRAGMA busy_timeout = 5000;
   PRAGMA synchronous = NORMAL;
+  PRAGMA temp_store = MEMORY;
+
+  CREATE TABLE IF NOT EXISTS system_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 
   CREATE TABLE IF NOT EXISTS bot_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -106,6 +136,17 @@ db.exec(`
     asset TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS bot_notifications (
+    id TEXT PRIMARY KEY,
+    timestamp INTEGER NOT NULL,
+    channel TEXT NOT NULL,
+    target_masked TEXT NOT NULL,
+    asset TEXT,
+    status TEXT NOT NULL,
+    message TEXT NOT NULL,
+    error_message TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS bot_signals (
     id TEXT PRIMARY KEY,
     timestamp INTEGER NOT NULL,
@@ -126,161 +167,170 @@ db.exec(`
     dedup_hash TEXT NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS bot_notifications (
-    id TEXT PRIMARY KEY,
-    timestamp INTEGER NOT NULL,
-    channel TEXT NOT NULL,
-    target_masked TEXT NOT NULL,
-    asset TEXT,
-    status TEXT NOT NULL,
-    message TEXT NOT NULL,
-    error_message TEXT
-  );
-
   CREATE INDEX IF NOT EXISTS idx_bot_logs_timestamp ON bot_logs(timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_bot_logs_type_timestamp ON bot_logs(type, timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_bot_notifications_timestamp ON bot_notifications(timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_bot_signals_timestamp ON bot_signals(timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_bot_signals_asset ON bot_signals(asset, timestamp DESC);
-  CREATE INDEX IF NOT EXISTS idx_bot_notifications_timestamp ON bot_notifications(timestamp DESC);
-  CREATE INDEX IF NOT EXISTS idx_bot_notifications_channel ON bot_notifications(channel, timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_bot_signals_dedup ON bot_signals(asset, dedup_hash, timestamp DESC);
 `);
+
+const setMetaStmt = db.prepare(`
+  INSERT INTO system_meta(key, value, updated_at)
+  VALUES (?, ?, ?)
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+`);
+const getMetaStmt = db.prepare(`SELECT value FROM system_meta WHERE key = ?`);
+
+function setMeta(key: string, value: string) {
+  setMetaStmt.run(key, value, Date.now());
+}
+
+function getMeta(key: string, fallback = '') {
+  const row = getMetaStmt.get(key) as { value?: string } | undefined;
+  return row?.value ?? fallback;
+}
+
+setMeta('schema_version', String(DB_SCHEMA_VERSION));
+if (!getMeta('last_pruned_at')) {
+  setMeta('last_pruned_at', '0');
+}
 
 const cfgCountRow = db.prepare('SELECT COUNT(*) as count FROM bot_config').get() as { count: number };
 if (!cfgCountRow.count) {
   db.prepare(`
-    INSERT INTO bot_config (
-      id, active, telegram_enabled, telegram_token, telegram_chat_id,
-      email_enabled, email_address, scan_interval_seconds, updated_at
-    ) VALUES (1, @active, @telegram_enabled, @telegram_token, @telegram_chat_id, @email_enabled, @email_address, @scan_interval_seconds, @updated_at)
-  `).run({
-    active: DEFAULT_BOT_CONFIG.active ? 1 : 0,
-    telegram_enabled: DEFAULT_BOT_CONFIG.telegramEnabled ? 1 : 0,
-    telegram_token: DEFAULT_BOT_CONFIG.telegramToken,
-    telegram_chat_id: DEFAULT_BOT_CONFIG.telegramChatId,
-    email_enabled: DEFAULT_BOT_CONFIG.emailEnabled ? 1 : 0,
-    email_address: DEFAULT_BOT_CONFIG.emailAddress,
-    scan_interval_seconds: DEFAULT_BOT_CONFIG.scanIntervalSeconds,
-    updated_at: Date.now(),
-  });
+    INSERT INTO bot_config(
+      id, active, telegram_enabled, telegram_token, telegram_chat_id, email_enabled, email_address, scan_interval_seconds, updated_at
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    DEFAULT_BOT_CONFIG.active ? 1 : 0,
+    DEFAULT_BOT_CONFIG.telegramEnabled ? 1 : 0,
+    DEFAULT_BOT_CONFIG.telegramToken,
+    DEFAULT_BOT_CONFIG.telegramChatId,
+    0,
+    '',
+    DEFAULT_BOT_CONFIG.scanIntervalSeconds,
+    Date.now(),
+  );
 }
 
-const seedAssets = ['BTC', 'ETH', 'PAXG'];
-for (const asset of seedAssets) {
-  db.prepare(`INSERT OR IGNORE INTO bot_asset_state (asset, last_known_price, last_alert_sent_at, last_signal_hash) VALUES (?, 0, 0, '')`).run(asset);
-}
-
-function toBool(value: unknown) {
-  return Boolean(Number(value));
-}
-
-function pruneTable(tableName: string, limit: number) {
-  db.prepare(`DELETE FROM ${tableName} WHERE id NOT IN (SELECT id FROM ${tableName} ORDER BY timestamp DESC LIMIT ${limit})`).run();
-}
-
-export function loadBotConfig(): ServerBotConfig {
-  const row = db.prepare('SELECT * FROM bot_config WHERE id = 1').get() as any;
-  if (!row) return { ...DEFAULT_BOT_CONFIG };
+function normalizeConfig(row: any): ServerBotConfig {
   return {
-    active: toBool(row.active),
-    telegramEnabled: toBool(row.telegram_enabled),
-    telegramToken: row.telegram_token || '',
-    telegramChatId: row.telegram_chat_id || '',
-    emailEnabled: toBool(row.email_enabled),
-    emailAddress: row.email_address || '',
+    active: Boolean(row.active),
+    telegramEnabled: Boolean(row.telegram_enabled),
+    telegramToken: String(row.telegram_token || ''),
+    telegramChatId: String(row.telegram_chat_id || ''),
+    emailEnabled: false,
+    emailAddress: '',
     scanIntervalSeconds: Math.max(10, Number(row.scan_interval_seconds) || DEFAULT_BOT_CONFIG.scanIntervalSeconds),
   };
 }
 
+export function loadBotConfig(): ServerBotConfig {
+  const row = db.prepare('SELECT * FROM bot_config WHERE id = 1').get() as any;
+  return row ? normalizeConfig(row) : DEFAULT_BOT_CONFIG;
+}
+
 export function saveBotConfig(nextConfig: ServerBotConfig): ServerBotConfig {
-  const normalized: ServerBotConfig = {
+  const safeConfig: ServerBotConfig = {
     active: Boolean(nextConfig.active),
     telegramEnabled: Boolean(nextConfig.telegramEnabled),
-    telegramToken: (nextConfig.telegramToken || '').trim(),
-    telegramChatId: (nextConfig.telegramChatId || '').trim(),
-    emailEnabled: Boolean(nextConfig.emailEnabled),
-    emailAddress: (nextConfig.emailAddress || '').trim(),
+    telegramToken: String(nextConfig.telegramToken || '').trim(),
+    telegramChatId: String(nextConfig.telegramChatId || '').trim(),
+    emailEnabled: false,
+    emailAddress: '',
     scanIntervalSeconds: Math.max(10, Math.floor(Number(nextConfig.scanIntervalSeconds) || DEFAULT_BOT_CONFIG.scanIntervalSeconds)),
   };
 
   db.prepare(`
     UPDATE bot_config SET
-      active = @active,
-      telegram_enabled = @telegram_enabled,
-      telegram_token = @telegram_token,
-      telegram_chat_id = @telegram_chat_id,
-      email_enabled = @email_enabled,
-      email_address = @email_address,
-      scan_interval_seconds = @scan_interval_seconds,
-      updated_at = @updated_at
+      active = ?,
+      telegram_enabled = ?,
+      telegram_token = ?,
+      telegram_chat_id = ?,
+      email_enabled = 0,
+      email_address = '',
+      scan_interval_seconds = ?,
+      updated_at = ?
     WHERE id = 1
-  `).run({
-    active: normalized.active ? 1 : 0,
-    telegram_enabled: normalized.telegramEnabled ? 1 : 0,
-    telegram_token: normalized.telegramToken,
-    telegram_chat_id: normalized.telegramChatId,
-    email_enabled: normalized.emailEnabled ? 1 : 0,
-    email_address: normalized.emailAddress,
-    scan_interval_seconds: normalized.scanIntervalSeconds,
-    updated_at: Date.now(),
-  });
+  `).run(
+    safeConfig.active ? 1 : 0,
+    safeConfig.telegramEnabled ? 1 : 0,
+    safeConfig.telegramToken,
+    safeConfig.telegramChatId,
+    safeConfig.scanIntervalSeconds,
+    Date.now(),
+  );
 
-  return normalized;
-}
-
-export function listAssetStates(): AssetRuntimeState[] {
-  const rows = db.prepare('SELECT asset, last_known_price, last_alert_sent_at, last_signal_hash FROM bot_asset_state ORDER BY asset ASC').all() as any[];
-  return rows.map((row) => ({
-    asset: row.asset,
-    lastKnownPrice: Number(row.last_known_price || 0),
-    lastAlertSentAt: Number(row.last_alert_sent_at || 0),
-    lastSignalHash: row.last_signal_hash || '',
-  }));
+  return loadBotConfig();
 }
 
 export function getAssetState(asset: string): AssetRuntimeState {
-  const row = db.prepare('SELECT asset, last_known_price, last_alert_sent_at, last_signal_hash FROM bot_asset_state WHERE asset = ?').get(asset) as any;
-  if (!row) {
-    db.prepare(`INSERT OR IGNORE INTO bot_asset_state (asset, last_known_price, last_alert_sent_at, last_signal_hash) VALUES (?, 0, 0, '')`).run(asset);
-    return { asset, lastKnownPrice: 0, lastAlertSentAt: 0, lastSignalHash: '' };
+  const safeAsset = String(asset || '').toUpperCase();
+  const row = db.prepare('SELECT * FROM bot_asset_state WHERE asset = ?').get(safeAsset) as any;
+  if (row) {
+    return {
+      asset: row.asset,
+      lastKnownPrice: Number(row.last_known_price || 0),
+      lastAlertSentAt: Number(row.last_alert_sent_at || 0),
+      lastSignalHash: String(row.last_signal_hash || ''),
+    };
   }
   return {
-    asset: row.asset,
-    lastKnownPrice: Number(row.last_known_price || 0),
-    lastAlertSentAt: Number(row.last_alert_sent_at || 0),
-    lastSignalHash: row.last_signal_hash || '',
+    asset: safeAsset,
+    lastKnownPrice: 0,
+    lastAlertSentAt: 0,
+    lastSignalHash: '',
   };
 }
 
-export function upsertAssetState(nextState: AssetRuntimeState) {
+export function upsertAssetState(state: AssetRuntimeState) {
   db.prepare(`
-    INSERT INTO bot_asset_state (asset, last_known_price, last_alert_sent_at, last_signal_hash)
-    VALUES (@asset, @last_known_price, @last_alert_sent_at, @last_signal_hash)
+    INSERT INTO bot_asset_state(asset, last_known_price, last_alert_sent_at, last_signal_hash)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(asset) DO UPDATE SET
       last_known_price = excluded.last_known_price,
       last_alert_sent_at = excluded.last_alert_sent_at,
       last_signal_hash = excluded.last_signal_hash
-  `).run({
-    asset: nextState.asset,
-    last_known_price: Number(nextState.lastKnownPrice || 0),
-    last_alert_sent_at: Number(nextState.lastAlertSentAt || 0),
-    last_signal_hash: nextState.lastSignalHash || '',
-  });
+  `).run(
+    String(state.asset || '').toUpperCase(),
+    Number(state.lastKnownPrice || 0),
+    Number(state.lastAlertSentAt || 0),
+    String(state.lastSignalHash || ''),
+  );
+}
+
+export function listAssetStates(): AssetRuntimeState[] {
+  const rows = db.prepare('SELECT * FROM bot_asset_state ORDER BY asset ASC').all() as any[];
+  return rows.map((row) => ({
+    asset: row.asset,
+    lastKnownPrice: Number(row.last_known_price || 0),
+    lastAlertSentAt: Number(row.last_alert_sent_at || 0),
+    lastSignalHash: String(row.last_signal_hash || ''),
+  }));
 }
 
 export function appendBotLog(log: ServerBotLog) {
-  db.prepare('INSERT OR REPLACE INTO bot_logs (id, timestamp, type, message, asset) VALUES (?, ?, ?, ?, ?)').run(
+  db.prepare(`
+    INSERT OR REPLACE INTO bot_logs(id, timestamp, type, message, asset)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
     log.id,
-    log.timestamp,
+    Number(log.timestamp || Date.now()),
     log.type,
     log.message,
-    log.asset || null,
+    log.asset ? String(log.asset).toUpperCase() : null,
   );
-  pruneTable('bot_logs', 800);
+  pruneData();
 }
 
-export function listBotLogs(limit = 100): ServerBotLog[] {
-  const safeLimit = Math.max(1, Math.min(800, Math.floor(limit)));
-  const rows = db.prepare(`SELECT id, timestamp, type, message, asset FROM bot_logs ORDER BY timestamp DESC LIMIT ${safeLimit}`).all() as any[];
-  return rows.map((row) => ({
+export function listBotLogs(limit = 100, type?: ServerBotLog['type']): ServerBotLog[] {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  const rows = type
+    ? db.prepare(`SELECT * FROM bot_logs WHERE type = ? ORDER BY timestamp DESC LIMIT ${safeLimit}`).all(type)
+    : db.prepare(`SELECT * FROM bot_logs ORDER BY timestamp DESC LIMIT ${safeLimit}`).all();
+
+  return (rows as any[]).map((row) => ({
     id: row.id,
     timestamp: Number(row.timestamp),
     type: row.type,
@@ -289,48 +339,39 @@ export function listBotLogs(limit = 100): ServerBotLog[] {
   }));
 }
 
-export function countBotLogs() {
-  const row = db.prepare('SELECT COUNT(*) as count FROM bot_logs').get() as any;
-  return Number(row?.count || 0);
-}
-
 export function appendSignal(signal: PersistedBotSignal) {
   db.prepare(`
-    INSERT OR REPLACE INTO bot_signals (
-      id, timestamp, asset, signal_type, spot_action, conviction_score,
-      price, change_24h, entry_price, stop_loss, target1, target2, target3,
-      summary_ar, summary_en, metadata_json, dedup_hash
-    ) VALUES (
-      @id, @timestamp, @asset, @signal_type, @spot_action, @conviction_score,
-      @price, @change_24h, @entry_price, @stop_loss, @target1, @target2, @target3,
-      @summary_ar, @summary_en, @metadata_json, @dedup_hash
-    )
-  `).run({
-    id: signal.id,
-    timestamp: signal.timestamp,
-    asset: signal.asset,
-    signal_type: signal.signalType,
-    spot_action: signal.spotAction,
-    conviction_score: signal.convictionScore,
-    price: signal.price,
-    change_24h: signal.change24h,
-    entry_price: signal.entryPrice,
-    stop_loss: signal.stopLoss,
-    target1: signal.target1,
-    target2: signal.target2,
-    target3: signal.target3,
-    summary_ar: signal.summaryAr,
-    summary_en: signal.summaryEn,
-    metadata_json: signal.metadataJson,
-    dedup_hash: signal.dedupHash,
-  });
-  pruneTable('bot_signals', 2500);
+    INSERT OR REPLACE INTO bot_signals(
+      id, timestamp, asset, signal_type, spot_action, conviction_score, price, change_24h,
+      entry_price, stop_loss, target1, target2, target3, summary_ar, summary_en, metadata_json, dedup_hash
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    signal.id,
+    Number(signal.timestamp || Date.now()),
+    String(signal.asset || '').toUpperCase(),
+    signal.signalType,
+    signal.spotAction,
+    Number(signal.convictionScore || 0),
+    Number(signal.price || 0),
+    Number(signal.change24h || 0),
+    Number(signal.entryPrice || 0),
+    Number(signal.stopLoss || 0),
+    Number(signal.target1 || 0),
+    Number(signal.target2 || 0),
+    Number(signal.target3 || 0),
+    signal.summaryAr || '',
+    signal.summaryEn || '',
+    signal.metadataJson || '{}',
+    signal.dedupHash || '',
+  );
+  pruneData();
 }
 
 export function listSignals(limit = 100, asset?: string): PersistedBotSignal[] {
-  const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
-  const rows = asset
-    ? db.prepare(`SELECT * FROM bot_signals WHERE asset = ? ORDER BY timestamp DESC LIMIT ${safeLimit}`).all(asset)
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  const safeAsset = asset ? String(asset).toUpperCase() : undefined;
+  const rows = safeAsset
+    ? db.prepare(`SELECT * FROM bot_signals WHERE asset = ? ORDER BY timestamp DESC LIMIT ${safeLimit}`).all(safeAsset)
     : db.prepare(`SELECT * FROM bot_signals ORDER BY timestamp DESC LIMIT ${safeLimit}`).all();
 
   return (rows as any[]).map((row) => ({
@@ -354,49 +395,63 @@ export function listSignals(limit = 100, asset?: string): PersistedBotSignal[] {
   }));
 }
 
-export function countSignals() {
-  const row = db.prepare('SELECT COUNT(*) as count FROM bot_signals').get() as any;
-  return Number(row?.count || 0);
+export function getSignalStats(): BotSignalStats {
+  const totalSignals = Number((db.prepare('SELECT COUNT(*) AS count FROM bot_signals').get() as any)?.count || 0);
+  const actionableSignals = Number((db.prepare(`SELECT COUNT(*) AS count FROM bot_signals WHERE spot_action IN ('SPOT_BUY', 'SPOT_SELL_ALL')`).get() as any)?.count || 0);
+  const buySignals = Number((db.prepare(`SELECT COUNT(*) AS count FROM bot_signals WHERE spot_action = 'SPOT_BUY'`).get() as any)?.count || 0);
+  const sellSignals = Number((db.prepare(`SELECT COUNT(*) AS count FROM bot_signals WHERE spot_action = 'SPOT_SELL_ALL'`).get() as any)?.count || 0);
+  const lastSignalAt = Number((db.prepare('SELECT COALESCE(MAX(timestamp), 0) AS ts FROM bot_signals').get() as any)?.ts || 0);
+  const byAssetRows = db.prepare('SELECT asset, COUNT(*) AS count FROM bot_signals GROUP BY asset').all() as any[];
+  const byAsset = Object.fromEntries(byAssetRows.map((row) => [row.asset, Number(row.count || 0)]));
+  return { totalSignals, actionableSignals, buySignals, sellSignals, byAsset, lastSignalAt };
 }
 
-export function appendNotification(delivery: BotNotificationDelivery) {
+export function pruneData() {
   db.prepare(`
-    INSERT OR REPLACE INTO bot_notifications (
-      id, timestamp, channel, target_masked, asset, status, message, error_message
-    ) VALUES (
-      @id, @timestamp, @channel, @target_masked, @asset, @status, @message, @error_message
+    DELETE FROM bot_logs
+    WHERE id IN (
+      SELECT id FROM bot_logs
+      ORDER BY timestamp DESC
+      LIMIT -1 OFFSET ${MAX_LOG_ROWS}
     )
-  `).run({
-    id: delivery.id,
-    timestamp: delivery.timestamp,
-    channel: delivery.channel,
-    target_masked: delivery.targetMasked,
-    asset: delivery.asset || null,
-    status: delivery.status,
-    message: delivery.message,
-    error_message: delivery.errorMessage || null,
-  });
-  pruneTable('bot_notifications', 2500);
+  `).run();
+
+  db.prepare(`
+    DELETE FROM bot_notifications
+    WHERE id IN (
+      SELECT id FROM bot_notifications
+      ORDER BY timestamp DESC
+      LIMIT -1 OFFSET ${MAX_LOG_ROWS}
+    )
+  `).run();
+
+  db.prepare(`
+    DELETE FROM bot_signals
+    WHERE id IN (
+      SELECT id FROM bot_signals
+      ORDER BY timestamp DESC
+      LIMIT -1 OFFSET ${MAX_SIGNAL_ROWS}
+    )
+  `).run();
+
+  setMeta('last_pruned_at', String(Date.now()));
 }
 
-export function listNotifications(limit = 100): BotNotificationDelivery[] {
-  const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
-  const rows = db.prepare(`SELECT * FROM bot_notifications ORDER BY timestamp DESC LIMIT ${safeLimit}`).all() as any[];
-  return rows.map((row) => ({
-    id: row.id,
-    timestamp: Number(row.timestamp),
-    channel: row.channel,
-    targetMasked: row.target_masked,
-    asset: row.asset || undefined,
-    status: row.status,
-    message: row.message,
-    errorMessage: row.error_message || undefined,
-  }));
-}
-
-export function countNotifications() {
-  const row = db.prepare('SELECT COUNT(*) as count FROM bot_notifications').get() as any;
-  return Number(row?.count || 0);
+export function getPersistenceHealth(): PersistenceHealth {
+  const signalRows = Number((db.prepare('SELECT COUNT(*) AS count FROM bot_signals').get() as any)?.count || 0);
+  const logRows = Number((db.prepare('SELECT COUNT(*) AS count FROM bot_logs').get() as any)?.count || 0);
+  const assetStateRows = Number((db.prepare('SELECT COUNT(*) AS count FROM bot_asset_state').get() as any)?.count || 0);
+  const walPath = `${dbPath}-wal`;
+  return {
+    databasePath: dbPath,
+    databaseSizeBytes: fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0,
+    walSizeBytes: fs.existsSync(walPath) ? fs.statSync(walPath).size : 0,
+    signalRows,
+    logRows,
+    assetStateRows,
+    lastPrunedAt: Number(getMeta('last_pruned_at', '0') || 0),
+    schemaVersion: Number(getMeta('schema_version', String(DB_SCHEMA_VERSION)) || DB_SCHEMA_VERSION),
+  };
 }
 
 export function maskToken(token: string) {
@@ -422,8 +477,8 @@ export function getSafeConfigForClient(config: ServerBotConfig) {
   return {
     active: config.active,
     telegramEnabled: config.telegramEnabled,
-    emailEnabled: config.emailEnabled,
-    emailAddress: maskEmail(config.emailAddress),
+    emailEnabled: false,
+    emailAddress: '',
     scanIntervalSeconds: config.scanIntervalSeconds,
     telegramConfigured: Boolean(config.telegramToken && config.telegramChatId),
     maskedTelegramToken: maskToken(config.telegramToken),
@@ -431,6 +486,35 @@ export function getSafeConfigForClient(config: ServerBotConfig) {
     hasTelegramToken: Boolean(config.telegramToken),
     hasTelegramChatId: Boolean(config.telegramChatId),
   };
+}
+
+export function appendNotification(notification: NotificationRecord) {
+  db.prepare(`
+    INSERT OR REPLACE INTO bot_notifications(id, timestamp, channel, target_masked, asset, status, message, error_message)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    notification.id,
+    Number(notification.timestamp || Date.now()),
+    notification.channel,
+    notification.targetMasked,
+    notification.asset ? String(notification.asset).toUpperCase() : null,
+    notification.status,
+    notification.message,
+    notification.errorMessage || null,
+  );
+  pruneData();
+}
+
+export function countBotLogs() {
+  return Number((db.prepare('SELECT COUNT(*) AS count FROM bot_logs').get() as any)?.count || 0);
+}
+
+export function countSignals() {
+  return Number((db.prepare('SELECT COUNT(*) AS count FROM bot_signals').get() as any)?.count || 0);
+}
+
+export function countNotifications() {
+  return Number((db.prepare('SELECT COUNT(*) AS count FROM bot_notifications').get() as any)?.count || 0);
 }
 
 export function getDbPath() {

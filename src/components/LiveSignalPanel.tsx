@@ -37,7 +37,7 @@ interface LiveSignalPanelProps {
   isAnalyzing: boolean;
   onTriggerGeminiAnalysis: () => void;
   onSendTelegramAlert: () => void;
-  onSendEmailAlert: () => void;
+  onSendEmailAlert?: () => void;
 }
 
 export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
@@ -54,7 +54,6 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
   isAnalyzing,
   onTriggerGeminiAnalysis,
   onSendTelegramAlert,
-  onSendEmailAlert,
 }) => {
   const signalType = aiSignal?.signalType || 'STRONG_BUY';
   const conviction = aiSignal?.convictionScore || 88;
