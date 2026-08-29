@@ -73,8 +73,8 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
     },
     {
       asset: 'PAXG',
-      nameAr: 'ذهب رقمي (Pax Gold)',
-      nameEn: 'Pax Gold (PAXG)',
+      nameAr: 'ذهب رقمي (Pax Gold - أونصة ذهب حقيقي)',
+      nameEn: 'Pax Gold (PAXG - Real 1oz Gold Token)',
       price: getAssetPrice('PAXG', 4456.0),
       change24h: getAssetChange('PAXG', 0.65),
       qualityScore: 91,

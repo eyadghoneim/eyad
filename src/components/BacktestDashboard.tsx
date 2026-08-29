@@ -135,6 +135,9 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#141414] text-gray-400 border border-[#222]">
               365 Days
             </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-950/40 text-blue-300 border border-blue-500/30">
+              {lang === 'ar' ? 'ℹ️ محاكاة إحصائية خوارزمية (Algorithmic Modeling)' : 'ℹ️ Algorithmic Statistical Model'}
+            </span>
           </div>
           <p className="text-[11px] text-gray-400 mt-1 font-sans">
             {lang === 'ar'

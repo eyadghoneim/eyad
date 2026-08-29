@@ -385,10 +385,26 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
 
         {/* Save & Close Button */}
         <button
-          onClick={onClose}
+          onClick={() => {
+            // Sync settings to 24/7 background server daemon
+            fetch('/api/bot/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                active: true,
+                telegramEnabled: config.telegramEnabled,
+                telegramToken: config.telegramToken,
+                telegramChatId: config.telegramChatId,
+                emailEnabled: config.emailEnabled,
+                emailAddress: config.emailAddress,
+                scanIntervalSeconds: config.autoScanIntervalSeconds,
+              }),
+            }).catch(() => {});
+            onClose();
+          }}
           className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all border border-blue-400/40 shadow-md"
         >
-          {lang === 'ar' ? 'حفظ وتطبيق الإعدادات' : 'Save & Close'}
+          {lang === 'ar' ? 'حفظ وتطبيق الإعدادات على السيرفر 24/7' : 'Save & Sync to 24/7 Server Daemon'}
         </button>
 
       </div>
