@@ -263,11 +263,16 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
               </label>
               <input
                 type="password"
-                placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+                placeholder={config.serverHasTelegramToken ? (lang === 'ar' ? 'يوجد توكن محفوظ على السيرفر — اكتب فقط لو عايز استبداله' : 'Token already stored on server — only type to replace it') : '123456789:ABCdefGHIjklMNOpqrSTUvwxYZ'}
                 value={config.telegramToken}
                 onChange={(e) => setConfig({ ...config, telegramToken: e.target.value })}
                 className="w-full px-2.5 py-1.5 rounded bg-[#050505] border border-[#222] text-white focus:outline-none focus:border-blue-500 text-xs"
               />
+              {config.serverHasTelegramToken && config.maskedTelegramToken && (
+                <div className="mt-1 text-[10px] text-emerald-400">
+                  {lang === 'ar' ? `توكن محفوظ على السيرفر: ${config.maskedTelegramToken}` : `Server token on file: ${config.maskedTelegramToken}`}
+                </div>
+              )}
             </div>
 
             <div>
@@ -276,11 +281,16 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
               </label>
               <input
                 type="text"
-                placeholder="123456789 أو @your_channel"
+                placeholder={config.serverHasTelegramChatId ? (lang === 'ar' ? 'يوجد Chat ID محفوظ — اكتب فقط لو عايز تغييره' : 'Chat ID already stored — only type to replace it') : '123456789 أو @your_channel'}
                 value={config.telegramChatId}
                 onChange={(e) => setConfig({ ...config, telegramChatId: e.target.value })}
                 className="w-full px-2.5 py-1.5 rounded bg-[#050505] border border-[#222] text-white focus:outline-none focus:border-blue-500 text-xs"
               />
+              {config.serverHasTelegramChatId && config.maskedTelegramChatId && (
+                <div className="mt-1 text-[10px] text-emerald-400">
+                  {lang === 'ar' ? `Chat ID محفوظ على السيرفر: ${config.maskedTelegramChatId}` : `Server chat ID on file: ${config.maskedTelegramChatId}`}
+                </div>
+              )}
             </div>
 
             <button
@@ -319,11 +329,16 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
               </label>
               <input
                 type="email"
-                placeholder="your.email@example.com"
+                placeholder={config.serverEmailMasked ? (lang === 'ar' ? 'يوجد بريد محفوظ على السيرفر — اكتب فقط لو عايز استبداله' : 'Email already stored on server — only type to replace it') : 'your.email@example.com'}
                 value={config.emailAddress}
                 onChange={(e) => setConfig({ ...config, emailAddress: e.target.value })}
                 className="w-full px-2.5 py-1.5 rounded bg-[#050505] border border-[#222] text-white focus:outline-none focus:border-blue-500 text-xs"
               />
+              {config.serverEmailMasked && (
+                <div className="mt-1 text-[10px] text-emerald-400">
+                  {lang === 'ar' ? `بريد محفوظ على السيرفر: ${config.serverEmailMasked}` : `Server email on file: ${config.serverEmailMasked}`}
+                </div>
+              )}
             </div>
 
             <button
@@ -386,19 +401,21 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
         {/* Save & Close Button */}
         <button
           onClick={() => {
-            // Sync settings to 24/7 background server daemon
+            const payload: Record<string, unknown> = {
+              active: true,
+              telegramEnabled: config.telegramEnabled,
+              emailEnabled: config.emailEnabled,
+              scanIntervalSeconds: config.autoScanIntervalSeconds,
+            };
+
+            if (config.telegramToken.trim()) payload.telegramToken = config.telegramToken.trim();
+            if (config.telegramChatId.trim()) payload.telegramChatId = config.telegramChatId.trim();
+            if (config.emailAddress.trim()) payload.emailAddress = config.emailAddress.trim();
+
             fetch('/api/bot/config', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                active: true,
-                telegramEnabled: config.telegramEnabled,
-                telegramToken: config.telegramToken,
-                telegramChatId: config.telegramChatId,
-                emailEnabled: config.emailEnabled,
-                emailAddress: config.emailAddress,
-                scanIntervalSeconds: config.autoScanIntervalSeconds,
-              }),
+              body: JSON.stringify(payload),
             }).catch(() => {});
             onClose();
           }}

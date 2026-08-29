@@ -9,7 +9,7 @@ export interface Candle {
   volume: number;
 }
 
-export type SignalType = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+export type SignalType = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NO_TRADE';
 
 export type SpotAction = 'SPOT_BUY' | 'SPOT_SELL_ALL' | 'SPOT_HOLD';
 
@@ -253,6 +253,11 @@ export interface AlertConfig {
   soundEnabled: boolean;
   autoScanIntervalSeconds: number;
   lastAlertSentAt?: number;
+  serverHasTelegramToken?: boolean;
+  serverHasTelegramChatId?: boolean;
+  maskedTelegramToken?: string;
+  maskedTelegramChatId?: string;
+  serverEmailMasked?: string;
 }
 
 export interface PaperPosition {

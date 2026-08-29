@@ -72,7 +72,23 @@ export function App() {
   const [alertConfig, setAlertConfig] = useState<AlertConfig>(() => {
     const saved = localStorage.getItem('eyad_btc_alert_config');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          telegramEnabled: Boolean(parsed.telegramEnabled),
+          telegramToken: '',
+          telegramChatId: '',
+          emailEnabled: Boolean(parsed.emailEnabled),
+          emailAddress: '',
+          soundEnabled: parsed.soundEnabled !== undefined ? Boolean(parsed.soundEnabled) : true,
+          autoScanIntervalSeconds: Number(parsed.autoScanIntervalSeconds) || 300,
+          serverHasTelegramToken: Boolean(parsed.serverHasTelegramToken),
+          serverHasTelegramChatId: Boolean(parsed.serverHasTelegramChatId),
+          maskedTelegramToken: parsed.maskedTelegramToken || '',
+          maskedTelegramChatId: parsed.maskedTelegramChatId || '',
+          serverEmailMasked: parsed.serverEmailMasked || '',
+        };
+      } catch (e) {}
     }
     return {
       telegramEnabled: false,
@@ -82,6 +98,11 @@ export function App() {
       emailAddress: '',
       soundEnabled: true,
       autoScanIntervalSeconds: 300,
+      serverHasTelegramToken: false,
+      serverHasTelegramChatId: false,
+      maskedTelegramToken: '',
+      maskedTelegramChatId: '',
+      serverEmailMasked: '',
     };
   });
 
@@ -111,12 +132,52 @@ export function App() {
   const [autoEvents, setAutoEvents] = useState<AutoTradeExecutionResult['events']>([]);
 
   useEffect(() => {
-    localStorage.setItem('eyad_btc_alert_config', JSON.stringify(alertConfig));
+    localStorage.setItem('eyad_btc_alert_config', JSON.stringify({
+      telegramEnabled: alertConfig.telegramEnabled,
+      emailEnabled: alertConfig.emailEnabled,
+      soundEnabled: alertConfig.soundEnabled,
+      autoScanIntervalSeconds: alertConfig.autoScanIntervalSeconds,
+      serverHasTelegramToken: alertConfig.serverHasTelegramToken,
+      serverHasTelegramChatId: alertConfig.serverHasTelegramChatId,
+      maskedTelegramToken: alertConfig.maskedTelegramToken,
+      maskedTelegramChatId: alertConfig.maskedTelegramChatId,
+      serverEmailMasked: alertConfig.serverEmailMasked,
+    }));
   }, [alertConfig]);
 
   useEffect(() => {
     localStorage.setItem('eyad_paper_account', JSON.stringify(paperAccount));
   }, [paperAccount]);
+
+  useEffect(() => {
+    const hydrateServerBotConfig = async () => {
+      try {
+        const res = await fetch('/api/bot/config');
+        if (!res.ok) return;
+        const data = await res.json();
+        const cfg = data?.config;
+        if (!cfg) return;
+        setAlertConfig((prev) => ({
+          ...prev,
+          telegramEnabled: typeof cfg.telegramEnabled === 'boolean' ? cfg.telegramEnabled : prev.telegramEnabled,
+          emailEnabled: typeof cfg.emailEnabled === 'boolean' ? cfg.emailEnabled : prev.emailEnabled,
+          autoScanIntervalSeconds: Number(cfg.scanIntervalSeconds) || prev.autoScanIntervalSeconds,
+          serverHasTelegramToken: Boolean(cfg.hasTelegramToken),
+          serverHasTelegramChatId: Boolean(cfg.hasTelegramChatId),
+          maskedTelegramToken: cfg.maskedTelegramToken || '',
+          maskedTelegramChatId: cfg.maskedTelegramChatId || '',
+          serverEmailMasked: cfg.emailAddress || '',
+          telegramToken: '',
+          telegramChatId: '',
+          emailAddress: '',
+        }));
+      } catch (e) {
+        // silent background hydration failure
+      }
+    };
+
+    hydrateServerBotConfig();
+  }, []);
 
   // Fetch Multi-Asset Tickers for Scanner Radar
   const fetchAllTickers = useCallback(async () => {

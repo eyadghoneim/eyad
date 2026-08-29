@@ -3,13 +3,36 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { buildDeterministicSignal } from './botStrategy.ts';
+import {
+  appendBotLog,
+  appendSignal,
+  AssetRuntimeState,
+  getAssetState,
+  getDbPath,
+  getSafeConfigForClient,
+  listAssetStates,
+  listBotLogs,
+  listSignals,
+  loadBotConfig,
+  saveBotConfig,
+  ServerBotLog,
+  ServerBotConfig,
+  upsertAssetState,
+} from './botPersistence.ts';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.disable('x-powered-by');
+app.use(express.json({ limit: '100kb' }));
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
 
 // Initialize Gemini AI Client with standard user-agent
 const ai = new GoogleGenAI({
@@ -935,43 +958,25 @@ app.post('/api/notifications/email-test', async (req, res) => {
 // 9. SERVER-SIDE MARKET WATCHER & STRATEGY DAEMON (24/7 BACKGROUND WORKER)
 // =========================================================================
 
-interface ServerBotConfig {
-  active: boolean;
-  telegramEnabled: boolean;
-  telegramToken: string;
-  telegramChatId: string;
-  emailEnabled: boolean;
-  emailAddress: string;
-  scanIntervalSeconds: number;
-}
-
-interface ServerBotLog {
-  id: string;
-  timestamp: number;
-  type: 'INFO' | 'SIGNAL' | 'ALERT' | 'ERROR';
-  message: string;
-  asset?: string;
-}
-
-const botConfig: ServerBotConfig = {
-  active: true,
-  telegramEnabled: false,
-  telegramToken: '',
-  telegramChatId: '',
-  emailEnabled: false,
-  emailAddress: '',
-  scanIntervalSeconds: 60,
-};
-
+let botConfig: ServerBotConfig = loadBotConfig();
+const runtimeAssetStates = new Map<string, AssetRuntimeState>(listAssetStates().map((item) => [item.asset, item]));
 const botState = {
   startedAt: Date.now(),
   lastScanTime: 0,
   scanCount: 0,
   monitoredAssets: ['BTC', 'ETH', 'PAXG'],
-  lastKnownPrices: { BTC: 78000, ETH: 2450, PAXG: 4450 } as Record<string, number>,
-  lastAlertSentAt: { BTC: 0, ETH: 0, PAXG: 0 } as Record<string, number>,
-  logs: [] as ServerBotLog[],
+  lastKnownPrices: Object.fromEntries(listAssetStates().map((item) => [item.asset, item.lastKnownPrice || 0])) as Record<string, number>,
+  logs: listBotLogs(100) as ServerBotLog[],
+  dbPath: getDbPath(),
 };
+
+function getOrCreateRuntimeAssetState(asset: string): AssetRuntimeState {
+  const existing = runtimeAssetStates.get(asset);
+  if (existing) return existing;
+  const state = getAssetState(asset);
+  runtimeAssetStates.set(asset, state);
+  return state;
+}
 
 function addServerLog(type: ServerBotLog['type'], message: string, asset?: string) {
   const logItem: ServerBotLog = {
@@ -981,88 +986,191 @@ function addServerLog(type: ServerBotLog['type'], message: string, asset?: strin
     message,
     asset,
   };
-  botState.logs.unshift(logItem);
-  if (botState.logs.length > 100) {
-    botState.logs.pop();
-  }
+  appendBotLog(logItem);
+  botState.logs = listBotLogs(100);
 }
 
-// Background Worker Cycle
-async function executeBackgroundMarketScan() {
-  if (!botConfig.active) return;
+function toUtcTimeLabel(timestamp: number) {
+  return new Date(timestamp).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+}
 
+function buildTelegramMessage(assetKey: string, signal: any, priceChangePct: number, generatedAt: number) {
+  const icon = signal.spotAction === 'SPOT_SELL_ALL' ? '⚠️' : signal.signalType === 'STRONG_BUY' ? '🚀' : signal.signalType === 'BUY' ? '📈' : 'ℹ️';
+  const priceLine = `💰 *السعر اللحظي:* $${Number(signal.entryPrice || 0).toLocaleString()}`;
+  const targetLines = signal.spotAction === 'SPOT_BUY'
+    ? `🎯 *الأهداف:*\n  • TP1: $${Number(signal.target1 || 0).toLocaleString()}\n  • TP2: $${Number(signal.target2 || 0).toLocaleString()}\n  • TP3: $${Number(signal.target3 || 0).toLocaleString()}`
+    : `🎯 *الحالة:* ${signal.spotAction === 'SPOT_SELL_ALL' ? 'حماية رأس المال / تصفية مركز سبوت' : 'مراقبة وانتظار'}`;
+
+  return `${icon} *[EYAD TRADING BOT - تنبيه السيرفر الآلي 24/7]*\n\n` +
+    `💎 *الأصل:* ${assetKey}/USDT ${assetKey === 'PAXG' ? '(Pax Gold - أونصة الذهب الرقمي)' : ''}\n` +
+    `${priceLine}\n` +
+    `📊 *التغير 24 ساعة:* ${priceChangePct > 0 ? '+' : ''}${priceChangePct.toFixed(2)}%\n` +
+    `🧠 *الإشارة:* ${signal.signalType} | ${signal.spotAction}\n` +
+    `🔥 *درجة الثقة:* ${signal.convictionScore}%\n` +
+    `${targetLines}\n` +
+    `🛑 *وقف الخسارة:* ${signal.stopLoss ? '$' + Number(signal.stopLoss).toLocaleString() : 'غير مطلوب'}\n` +
+    `🕒 *وقت التوليد:* ${toUtcTimeLabel(generatedAt)}\n\n` +
+    `${signal.summaryAr}\n\n` +
+    `🤖 _Server Strategy Engine + Persistent Daemon_`;
+}
+
+let backgroundTimer: NodeJS.Timeout | null = null;
+let backgroundScanInProgress = false;
+
+function scheduleNextBackgroundScan(delayMs?: number) {
+  if (backgroundTimer) clearTimeout(backgroundTimer);
+  const nextDelay = typeof delayMs === 'number' ? delayMs : Math.max(10, botConfig.scanIntervalSeconds) * 1000;
+  backgroundTimer = setTimeout(async () => {
+    await executeBackgroundMarketScan();
+    scheduleNextBackgroundScan();
+  }, nextDelay);
+}
+
+async function executeBackgroundMarketScan() {
+  if (!botConfig.active) {
+    addServerLog('INFO', 'Background daemon is inactive; scan skipped');
+    return;
+  }
+  if (backgroundScanInProgress) {
+    addServerLog('INFO', 'Skipped overlapping background scan');
+    return;
+  }
+
+  backgroundScanInProgress = true;
   botState.lastScanTime = Date.now();
   botState.scanCount += 1;
 
   try {
-    const symbols = ['BTCUSDT', 'ETHUSDT', 'PAXGUSDT'];
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`, {
-      headers: { 'User-Agent': 'eyad-trading-daemon/2.5' },
+    const assetToSymbol: Record<string, string> = { BTC: 'BTCUSDT', ETH: 'ETHUSDT', PAXG: 'PAXGUSDT' };
+    const symbols = Object.values(assetToSymbol);
+
+    const tickerRes = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`, {
+      headers: { 'User-Agent': 'eyad-trading-daemon/2.6' },
     });
 
-    if (!res.ok) {
-      addServerLog('ERROR', `Binance feed error: HTTP ${res.status}`);
+    if (!tickerRes.ok) {
+      addServerLog('ERROR', `Binance ticker feed error: HTTP ${tickerRes.status}`);
       return;
     }
 
-    const data = await res.json();
-    for (const item of data) {
-      let assetKey = 'BTC';
-      if (item.symbol === 'ETHUSDT') assetKey = 'ETH';
-      if (item.symbol === 'PAXGUSDT') assetKey = 'PAXG';
+    const tickers = await tickerRes.json();
+    const tickerMap = new Map<string, any>((tickers || []).map((item: any) => [item.symbol, item]));
 
-      const lastPrice = parseFloat(item.lastPrice);
-      const priceChangePct = parseFloat(item.priceChangePercent);
-      botState.lastKnownPrices[assetKey] = lastPrice;
+    await Promise.all(botState.monitoredAssets.map(async (assetKey) => {
+      const symbol = assetToSymbol[assetKey];
+      const klineRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=240`, {
+        headers: { 'User-Agent': 'eyad-trading-daemon/2.6' },
+      });
 
-      // Check for notable price momentum breakout (e.g. 24h gain >= +2.5% or decisive pullbacks)
-      const now = Date.now();
-      const lastAlert = botState.lastAlertSentAt[assetKey] || 0;
-      const TWO_HOURS = 2 * 60 * 60 * 1000;
-
-      // Deduplication: maximum 1 automated background alert per asset every 2 hours unless major event
-      if (now - lastAlert > TWO_HOURS && (priceChangePct >= 2.0 || priceChangePct <= -3.0)) {
-        addServerLog('SIGNAL', `Automated Worker detected ${assetKey} momentum setup (24h: ${priceChangePct > 0 ? '+' : ''}${priceChangePct.toFixed(2)}% at $${lastPrice.toLocaleString()})`, assetKey);
-
-        if (botConfig.telegramEnabled && botConfig.telegramToken && botConfig.telegramChatId) {
-          const isBullish = priceChangePct >= 0;
-          const msg = `${isBullish ? '🚀' : '⚠️'} *[EYAD TRADING BOT - تنبيه السيرفر الآلي 24/7]*\n\n` +
-            `💎 *الأصل:* ${assetKey}/USDT ${assetKey === 'PAXG' ? '(أونصة الذهب الرقمي)' : ''}\n` +
-            `💰 *السعر اللحظي:* $${lastPrice.toLocaleString()}\n` +
-            `📊 *التغير خلال 24 ساعة:* ${priceChangePct > 0 ? '+' : ''}${priceChangePct.toFixed(2)}%\n` +
-            `🎯 *التقييم الخوارزمي:* ${isBullish ? 'تجميع مؤسسي وزخم صاعد' : 'إعادة اختبار مستويات دعم'}\n` +
-            `🕒 *الوقت:* ${new Date().toLocaleTimeString()} (UTC)\n\n` +
-            `🤖 _تم الإرسال آلياً عبر خادم المراقبة المستقل 24/7_`;
-
-          try {
-            await fetch(`https://api.telegram.org/bot${botConfig.telegramToken}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: botConfig.telegramChatId,
-                text: msg,
-                parse_mode: 'Markdown',
-              }),
-            });
-            botState.lastAlertSentAt[assetKey] = now;
-            addServerLog('ALERT', `Dispatched automated Telegram alert for ${assetKey} to chat ${botConfig.telegramChatId}`, assetKey);
-          } catch (tErr: any) {
-            addServerLog('ERROR', `Failed sending background telegram alert: ${tErr.message}`, assetKey);
-          }
-        }
+      if (!klineRes.ok) {
+        addServerLog('ERROR', `Klines fetch failed for ${assetKey}: HTTP ${klineRes.status}`, assetKey);
+        return;
       }
-    }
+
+      const rawKlines = await klineRes.json();
+      const candles = (rawKlines || []).map((k: any) => ({
+        time: k[0],
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4]),
+        volume: parseFloat(k[5]),
+      }));
+
+      if (candles.length < 50) {
+        addServerLog('ERROR', `Insufficient candles for ${assetKey} server strategy`, assetKey);
+        return;
+      }
+
+      const tickerItem = tickerMap.get(symbol);
+      const lastPrice = Number(tickerItem?.lastPrice || candles[candles.length - 1].close || 0);
+      const priceChangePct = Number(tickerItem?.priceChangePercent || 0);
+      const signalResult = buildDeterministicSignal({ asset: assetKey as any, candles, change24h: priceChangePct });
+      const signal = signalResult.signal;
+      const runtimeState = getOrCreateRuntimeAssetState(assetKey);
+      const now = Date.now();
+      const cooldownMs = 2 * 60 * 60 * 1000;
+      const eligibleSignal = signal.spotAction === 'SPOT_BUY' || signal.spotAction === 'SPOT_SELL_ALL';
+      const dedupBlocked = runtimeState.lastSignalHash === signalResult.dedupHash && now - runtimeState.lastAlertSentAt < cooldownMs;
+
+      botState.lastKnownPrices[assetKey] = lastPrice;
+      runtimeState.lastKnownPrice = lastPrice;
+      upsertAssetState(runtimeState);
+
+      if (eligibleSignal) {
+        appendSignal({
+          id: `sig_${assetKey}_${now}`,
+          timestamp: now,
+          asset: assetKey,
+          signalType: signal.signalType,
+          spotAction: signal.spotAction,
+          convictionScore: signal.convictionScore,
+          price: lastPrice,
+          change24h: priceChangePct,
+          entryPrice: signal.entryPrice,
+          stopLoss: signal.stopLoss,
+          target1: signal.target1,
+          target2: signal.target2,
+          target3: signal.target3,
+          summaryAr: signal.summaryAr,
+          summaryEn: signal.summaryEn,
+          metadataJson: JSON.stringify({
+            indicators: signalResult.indicators,
+            smc: signalResult.smc,
+            elliott: signalResult.elliott,
+            reasons: signalResult.reasons,
+          }),
+          dedupHash: signalResult.dedupHash,
+        });
+      }
+
+      if (!eligibleSignal) {
+        return;
+      }
+      if (dedupBlocked) {
+        addServerLog('INFO', `Dedup blocked duplicate ${signal.signalType} signal for ${assetKey}`, assetKey);
+        return;
+      }
+      if (!(botConfig.telegramEnabled && botConfig.telegramToken && botConfig.telegramChatId)) {
+        addServerLog('SIGNAL', `Actionable ${signal.signalType} detected for ${assetKey}, but Telegram is not fully configured`, assetKey);
+        return;
+      }
+
+      const message = buildTelegramMessage(assetKey, signal, priceChangePct, signal.generatedAt);
+      try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${botConfig.telegramToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: botConfig.telegramChatId,
+            text: message,
+            parse_mode: 'Markdown',
+          }),
+        });
+        const tgData = await tgRes.json();
+        if (!tgData.ok) {
+          addServerLog('ERROR', `Telegram daemon send failed for ${assetKey}: ${tgData.description || 'Unknown Telegram error'}`, assetKey);
+          return;
+        }
+
+        runtimeState.lastAlertSentAt = now;
+        runtimeState.lastSignalHash = signalResult.dedupHash;
+        runtimeState.lastKnownPrice = lastPrice;
+        upsertAssetState(runtimeState);
+        addServerLog('ALERT', `Dispatched ${signal.signalType} automated Telegram alert for ${assetKey}`, assetKey);
+      } catch (tErr: any) {
+        addServerLog('ERROR', `Failed sending background telegram alert: ${tErr.message}`, assetKey);
+      }
+    }));
   } catch (err: any) {
     addServerLog('ERROR', `Background scan exception: ${err.message}`);
+  } finally {
+    backgroundScanInProgress = false;
   }
 }
 
-// Start 24/7 background scheduler loop (runs every 60 seconds independently)
-setInterval(executeBackgroundMarketScan, 60000);
-// Trigger initial warm-up scan after 5 seconds
-setTimeout(executeBackgroundMarketScan, 5000);
+scheduleNextBackgroundScan(5000);
 
-// Endpoint: Bot Daemon Status
 app.get('/api/bot/status', (req, res) => {
   return res.json({
     success: true,
@@ -1075,33 +1183,70 @@ app.get('/api/bot/status', (req, res) => {
       lastKnownPrices: botState.lastKnownPrices,
       telegramConfigured: Boolean(botConfig.telegramEnabled && botConfig.telegramToken && botConfig.telegramChatId),
       scanIntervalSeconds: botConfig.scanIntervalSeconds,
+      databasePath: botState.dbPath,
+      scanInProgress: backgroundScanInProgress,
     },
+    config: getSafeConfigForClient(botConfig),
   });
 });
 
-// Endpoint: Save Bot Config Server-Side (persists in worker memory)
-app.post('/api/bot/config', (req, res) => {
-  const { active, telegramEnabled, telegramToken, telegramChatId, emailEnabled, emailAddress, scanIntervalSeconds } = req.body;
-  if (typeof active === 'boolean') botConfig.active = active;
-  if (typeof telegramEnabled === 'boolean') botConfig.telegramEnabled = telegramEnabled;
-  if (typeof telegramToken === 'string') botConfig.telegramToken = telegramToken.trim();
-  if (typeof telegramChatId === 'string') botConfig.telegramChatId = telegramChatId.trim();
-  if (typeof emailEnabled === 'boolean') botConfig.emailEnabled = emailEnabled;
-  if (typeof emailAddress === 'string') botConfig.emailAddress = emailAddress.trim();
-  if (typeof scanIntervalSeconds === 'number' && scanIntervalSeconds >= 10) {
-    botConfig.scanIntervalSeconds = scanIntervalSeconds;
-  }
-
-  addServerLog('INFO', `Server bot notification config updated (Telegram: ${botConfig.telegramEnabled ? 'Active' : 'Off'})`);
-  return res.json({ success: true, message: 'Server bot daemon settings updated and active 24/7', config: botConfig });
-});
-
-// Endpoint: Bot Execution Logs
-app.get('/api/bot/logs', (req, res) => {
+app.get('/api/bot/config', (req, res) => {
+  botConfig = loadBotConfig();
   return res.json({
     success: true,
-    logs: botState.logs,
-    count: botState.logs.length,
+    config: getSafeConfigForClient(botConfig),
+  });
+});
+
+app.post('/api/bot/config', (req, res) => {
+  const { active, telegramEnabled, telegramToken, telegramChatId, emailEnabled, emailAddress, scanIntervalSeconds } = req.body || {};
+  const nextConfig: ServerBotConfig = {
+    ...botConfig,
+    active: typeof active === 'boolean' ? active : botConfig.active,
+    telegramEnabled: typeof telegramEnabled === 'boolean' ? telegramEnabled : botConfig.telegramEnabled,
+    telegramToken: typeof telegramToken === 'string' && telegramToken.trim() ? telegramToken.trim() : botConfig.telegramToken,
+    telegramChatId: typeof telegramChatId === 'string' && telegramChatId.trim() ? telegramChatId.trim() : botConfig.telegramChatId,
+    emailEnabled: typeof emailEnabled === 'boolean' ? emailEnabled : botConfig.emailEnabled,
+    emailAddress: typeof emailAddress === 'string' && emailAddress.trim() ? emailAddress.trim() : botConfig.emailAddress,
+    scanIntervalSeconds: typeof scanIntervalSeconds === 'number' && scanIntervalSeconds >= 10
+      ? Math.floor(scanIntervalSeconds)
+      : botConfig.scanIntervalSeconds,
+  };
+
+  botConfig = saveBotConfig(nextConfig);
+  addServerLog('INFO', `Server bot config updated (Telegram: ${botConfig.telegramEnabled ? 'On' : 'Off'}, Interval: ${botConfig.scanIntervalSeconds}s)`);
+  scheduleNextBackgroundScan(1000);
+
+  return res.json({
+    success: true,
+    message: 'Server bot configuration updated and persisted successfully',
+    config: getSafeConfigForClient(botConfig),
+  });
+});
+
+app.post('/api/bot/scan-now', async (req, res) => {
+  await executeBackgroundMarketScan();
+  return res.json({ success: true, message: 'Background scan executed', at: Date.now() });
+});
+
+app.get('/api/bot/logs', (req, res) => {
+  const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
+  const logs = listBotLogs(limit);
+  return res.json({
+    success: true,
+    logs,
+    count: logs.length,
+  });
+});
+
+app.get('/api/bot/signals', (req, res) => {
+  const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
+  const asset = typeof req.query.asset === 'string' ? req.query.asset.toUpperCase() : undefined;
+  const signals = listSignals(limit, asset);
+  return res.json({
+    success: true,
+    signals,
+    count: signals.length,
   });
 });
 
