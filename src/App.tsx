@@ -11,6 +11,7 @@ import { MultiAssetScanner } from './components/MultiAssetScanner';
 import { PaperTradingPanel } from './components/PaperTradingPanel';
 import { WhaleOrderBookHeatmap } from './components/WhaleOrderBookHeatmap';
 import { MacroEconomicFilter } from './components/MacroEconomicFilter';
+import { BotOperationsPanel } from './components/BotOperationsPanel';
 import { LiquidationHeatmap } from './components/LiquidationHeatmap';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 import { 
@@ -37,6 +38,7 @@ import { analyzeElliottWaves } from './utils/elliottWave';
 import { initialLearningState, updateLearningWithTrades } from './utils/learningEngine';
 import { run1YearBacktest } from './utils/backtestingEngine';
 import { evaluatePaperPositionsAuto, autoOpenPaperTradeOnSignal, AutoTradeExecutionResult } from './utils/paperTradingEngine';
+import { getBotAdminHeaders } from './utils/botAdminAuth';
 import { Activity, BarChart2, BrainCircuit, Sparkles, CheckCircle2, ShieldCheck, Code2, Wallet, Layers, Calendar, Flame, Columns, Radio } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -45,7 +47,7 @@ export function App() {
   const [currentAsset, setCurrentAsset] = useState<SupportedAsset>('BTC');
   const [activeMainTab, setActiveMainTab] = useState<'live' | 'liquidity' | 'simulation' | 'intelligence'>('live');
   const [simSubTab, setSimSubTab] = useState<'paper' | 'backtest'>('paper');
-  const [intelSubTab, setIntelSubTab] = useState<'macro' | 'learning'>('macro');
+  const [intelSubTab, setIntelSubTab] = useState<'macro' | 'learning' | 'ops'>('macro');
   const [timeframe, setTimeframe] = useState<Timeframe>('1h');
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   
@@ -152,7 +154,7 @@ export function App() {
   useEffect(() => {
     const hydrateServerBotConfig = async () => {
       try {
-        const res = await fetch('/api/bot/config');
+        const res = await fetch('/api/bot/config', { headers: getBotAdminHeaders() });
         if (!res.ok) return;
         const data = await res.json();
         const cfg = data?.config;
@@ -601,7 +603,7 @@ export function App() {
             const msg = `${icon} *[EYAD BOT - إشعار آلي]*\n\n📌 *الحدث:* ${ev.messageAr}\n💎 *الأصل:* ${ev.asset}/USDT\n💰 *السعر:* $${ev.price.toLocaleString()}\n🕒 *الوقت:* ${new Date(ev.timestamp).toLocaleTimeString()}`;
             fetch('/api/notifications/telegram-send', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 token: alertConfig.telegramToken,
                 chatId: alertConfig.telegramChatId,
@@ -661,7 +663,9 @@ export function App() {
 
   // Broadcast to Telegram
   const handleSendTelegram = async () => {
-    if (!alertConfig.telegramToken || !alertConfig.telegramChatId) {
+    const hasLocalTelegram = Boolean(alertConfig.telegramToken.trim() && alertConfig.telegramChatId.trim());
+    const hasServerTelegram = Boolean(alertConfig.serverHasTelegramToken && alertConfig.serverHasTelegramChatId);
+    if (!hasLocalTelegram && !hasServerTelegram) {
       setIsAlertModalOpen(true);
       return;
     }
@@ -669,7 +673,7 @@ export function App() {
     try {
       const res = await fetch('/api/notifications/telegram-send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           token: alertConfig.telegramToken,
           chatId: alertConfig.telegramChatId,
@@ -690,7 +694,9 @@ export function App() {
 
   // Broadcast to Email
   const handleSendEmail = async () => {
-    if (!alertConfig.emailAddress) {
+    const hasLocalEmail = Boolean(alertConfig.emailAddress.trim());
+    const hasServerEmail = Boolean(alertConfig.serverEmailMasked);
+    if (!hasLocalEmail && !hasServerEmail) {
       setIsAlertModalOpen(true);
       return;
     }
@@ -698,7 +704,7 @@ export function App() {
     try {
       const res = await fetch('/api/notifications/email-send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           email: alertConfig.emailAddress,
           signal: aiSignal,
@@ -992,12 +998,26 @@ export function App() {
                   <BrainCircuit className="w-3.5 h-3.5" />
                   <span>{lang === 'ar' ? 'سجل التعلم الذاتي وتفادي الأخطاء' : 'AI Mistake Journal & Memory'}</span>
                 </button>
+
+                <button
+                  onClick={() => setIntelSubTab('ops')}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded font-mono text-xs font-bold transition-all ${
+                    intelSubTab === 'ops'
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                      : 'text-gray-400 hover:text-white hover:bg-[#1a1a1a]'
+                  }`}
+                >
+                  <Radio className="w-3.5 h-3.5" />
+                  <span>{lang === 'ar' ? 'عمليات البوت والسجل' : 'Bot Ops & Logs'}</span>
+                </button>
               </div>
 
               <div className="text-[11px] font-mono text-gray-400 px-1 hidden sm:block">
                 {intelSubTab === 'macro'
                   ? (lang === 'ar' ? 'حظر الصفقات في أوقات الأخبار شديدة التقلب' : 'News volatility circuit breaker & calendar')
-                  : (lang === 'ar' ? 'تحليل الصفقات السلبية لمنع تكرار الأخطاء' : 'Adaptive weights and mistake avoidance log')}
+                  : intelSubTab === 'learning'
+                    ? (lang === 'ar' ? 'تحليل الصفقات السلبية لمنع تكرار الأخطاء' : 'Adaptive weights and mistake avoidance log')
+                    : (lang === 'ar' ? 'مراقبة الـ daemon وسجل الإشارات واللوجز المؤمنة' : 'Secure daemon monitoring, logs, and signal history')}
               </div>
             </div>
 
@@ -1017,13 +1037,18 @@ export function App() {
                   lang={lang}
                 />
               </div>
-            ) : (
+            ) : intelSubTab === 'learning' ? (
               <SelfLearningJournal
                 learningState={learningState}
                 trades={backtestResult.trades}
                 lang={lang}
                 onTriggerAILearning={handleTriggerAILearning}
                 isLearning={isLearningAI}
+              />
+            ) : (
+              <BotOperationsPanel
+                lang={lang}
+                currentAsset={currentAsset}
               />
             )}
           </div>

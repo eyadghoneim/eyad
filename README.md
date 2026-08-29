@@ -47,3 +47,21 @@
 ## 🔒 الأمان والخصوصية (Security & Privacy):
 - جميع مفاتيح التيليجرام وإعدادات التنبيهات تُحفظ في متصفح المستخدم فقط (`localStorage`).
 - لا توجد أي مفاتيح خاصة أو بيانات حساسة داخل الكود المصدري.
+
+
+---
+
+## 🛡️ إعدادات الحماية والتخزين (Phase 3)
+
+أضف هذه المتغيرات إلى ملف `.env` عند النشر:
+
+```env
+GEMINI_API_KEY=your_key_here
+APP_URL=https://your-domain.example
+BOT_ADMIN_TOKEN=change-this-to-a-long-random-secret
+```
+
+- `BOT_ADMIN_TOKEN` يفعّل حماية نقاط `/api/bot/*` و `/api/notifications/*` الحساسة.
+- قاعدة البيانات الآن تعمل عبر **SQLite + WAL** داخل `data/eyad-bot.sqlite`.
+- الواجهة تعرض سجل الإشارات واللوجز مباشرة من قاعدة البيانات عبر تبويب **Bot Ops & Logs**.
+- رمز الإدارة يُدخل من الواجهة ويُحفظ في `sessionStorage` فقط، وليس `localStorage`.

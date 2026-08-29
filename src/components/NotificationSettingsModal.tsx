@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, Mail, Bell, CheckCircle2, AlertCircle, Volume2, ShieldCheck, HelpCircle, Smartphone, Radio, Globe } from 'lucide-react';
+import { X, Send, Mail, Bell, CheckCircle2, AlertCircle, Volume2, ShieldCheck, HelpCircle, Smartphone, Radio, Globe, KeyRound } from 'lucide-react';
 import { AlertConfig } from '../types';
+import { getBotAdminHeaders, getBotAdminToken, setBotAdminToken, clearBotAdminToken } from '../utils/botAdminAuth';
 
 interface NotificationSettingsModalProps {
   isOpen: boolean;
@@ -22,10 +23,12 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   const [browserPermission, setBrowserPermission] = useState<string>('default');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [adminToken, setAdminToken] = useState('');
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setBrowserPermission(Notification.permission);
+      setAdminToken(getBotAdminToken());
     }
 
     const handleBeforeInstallPrompt = (e: any) => {
@@ -89,10 +92,12 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   };
 
   const handleTestTelegram = async () => {
-    if (!config.telegramToken || !config.telegramChatId) {
+    const hasLocalTelegram = Boolean(config.telegramToken.trim() && config.telegramChatId.trim());
+    const hasServerTelegram = Boolean(config.serverHasTelegramToken && config.serverHasTelegramChatId);
+    if (!hasLocalTelegram && !hasServerTelegram) {
       setTestResult({
         success: false,
-        message: lang === 'ar' ? 'يرجى إدخال Bot Token و Chat ID أولاً' : 'Please enter Bot Token & Chat ID',
+        message: lang === 'ar' ? 'يرجى إدخال Bot Token و Chat ID أو حفظهما على السيرفر أولاً' : 'Please provide Bot Token & Chat ID or save them on the server first',
       });
       return;
     }
@@ -102,7 +107,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
     try {
       const res = await fetch('/api/notifications/telegram-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           token: config.telegramToken,
           chatId: config.telegramChatId,
@@ -133,10 +138,12 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   };
 
   const handleTestEmail = async () => {
-    if (!config.emailAddress) {
+    const hasLocalEmail = Boolean(config.emailAddress.trim());
+    const hasServerEmail = Boolean(config.serverEmailMasked);
+    if (!hasLocalEmail && !hasServerEmail) {
       setTestResult({
         success: false,
-        message: lang === 'ar' ? 'يرجى إدخال البريد الإلكتروني أولاً' : 'Please enter email address',
+        message: lang === 'ar' ? 'يرجى إدخال البريد الإلكتروني أو حفظه على السيرفر أولاً' : 'Please enter an email address or save one on the server first',
       });
       return;
     }
@@ -146,7 +153,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
     try {
       const res = await fetch('/api/notifications/email-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           email: config.emailAddress,
           subject: 'EYAD Trading Alert Test',
@@ -352,6 +359,53 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
           </div>
         </div>
 
+        <div className="bg-[#0c0c0c] p-3 rounded-lg border border-[#222] space-y-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>{lang === 'ar' ? 'Bot Admin Token (للجلسة الحالية فقط)' : 'Bot Admin Token (Session Only)'}</span>
+          </div>
+
+          <input
+            type="password"
+            placeholder={lang === 'ar' ? 'أدخل الرمز الإداري إذا كانت حماية الـ endpoints مفعلة' : 'Enter the admin token if endpoint protection is enabled'}
+            value={adminToken}
+            onChange={(e) => setAdminToken(e.target.value)}
+            className="w-full px-2.5 py-1.5 rounded bg-[#050505] border border-[#222] text-white focus:outline-none focus:border-amber-500 text-xs"
+          />
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setBotAdminToken(adminToken);
+                setTestResult({
+                  success: true,
+                  message: lang === 'ar' ? 'تم حفظ Bot Admin Token في session الحالية فقط.' : 'Bot Admin Token saved for this session only.',
+                });
+              }}
+              className="flex-1 py-1.5 rounded bg-amber-500/15 hover:bg-amber-500/20 text-amber-200 border border-amber-500/30 font-bold text-xs transition-all"
+            >
+              {lang === 'ar' ? 'حفظ الرمز للجلسة' : 'Save Session Token'}
+            </button>
+            <button
+              onClick={() => {
+                clearBotAdminToken();
+                setAdminToken('');
+                setTestResult({
+                  success: true,
+                  message: lang === 'ar' ? 'تم حذف Bot Admin Token من الجلسة الحالية.' : 'Bot Admin Token cleared from this session.',
+                });
+              }}
+              className="flex-1 py-1.5 rounded bg-[#141414] hover:bg-[#1a1a1a] text-gray-200 border border-[#333] font-bold text-xs transition-all"
+            >
+              {lang === 'ar' ? 'مسح الرمز' : 'Clear Token'}
+            </button>
+          </div>
+
+          <div className="text-[10px] text-gray-500">
+            {lang === 'ar' ? 'الرمز لا يُخزن في localStorage، بل داخل session الحالية فقط.' : 'The token is stored only in the current session, never in localStorage.'}
+          </div>
+        </div>
+
         {/* Scan Frequency & Audio */}
         <div className="grid grid-cols-2 gap-2.5 text-xs">
           <div className="bg-[#0c0c0c] p-2.5 rounded-lg border border-[#222]">
@@ -414,7 +468,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
 
             fetch('/api/bot/config', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify(payload),
             }).catch(() => {});
             onClose();

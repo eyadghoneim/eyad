@@ -338,3 +338,65 @@ export interface MacroNewsStatus {
   upcomingEvents: MacroEvent[];
   lockReasonAr?: string;
 }
+
+export interface BotSafeConfig {
+  active: boolean;
+  telegramEnabled: boolean;
+  emailEnabled: boolean;
+  emailAddress: string;
+  scanIntervalSeconds: number;
+  telegramConfigured: boolean;
+  maskedTelegramToken: string;
+  maskedTelegramChatId: string;
+  hasTelegramToken: boolean;
+  hasTelegramChatId: boolean;
+}
+
+export interface BotPublicStatus {
+  active: boolean;
+  lastScanTime: number;
+  scanIntervalSeconds: number;
+  scanInProgress: boolean;
+  requiresAdminToken: boolean;
+  securityMode: 'open' | 'protected';
+}
+
+export interface BotDaemonStatus extends BotPublicStatus {
+  uptimeSeconds: number;
+  scanCount: number;
+  monitoredAssets: string[];
+  lastKnownPrices: Record<string, number>;
+  telegramConfigured: boolean;
+  databaseEngine: string;
+  logCount: number;
+  signalCount: number;
+  notificationCount: number;
+}
+
+export interface BotLogRecord {
+  id: string;
+  timestamp: number;
+  type: 'INFO' | 'SIGNAL' | 'ALERT' | 'ERROR' | 'SECURITY' | 'WARN';
+  message: string;
+  asset?: string;
+}
+
+export interface BotSignalRecord {
+  id: string;
+  timestamp: number;
+  asset: string;
+  signalType: SignalType;
+  spotAction: SpotAction;
+  convictionScore: number;
+  price: number;
+  change24h: number;
+  entryPrice: number;
+  stopLoss: number;
+  target1: number;
+  target2: number;
+  target3: number;
+  summaryAr: string;
+  summaryEn: string;
+  metadataJson: string;
+  dedupHash: string;
+}

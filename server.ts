@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { NextFunction, Request } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
@@ -6,8 +6,12 @@ import dotenv from 'dotenv';
 import { buildDeterministicSignal } from './botStrategy.ts';
 import {
   appendBotLog,
+  appendNotification,
   appendSignal,
   AssetRuntimeState,
+  countBotLogs,
+  countNotifications,
+  countSignals,
   getAssetState,
   getDbPath,
   getSafeConfigForClient,
@@ -15,6 +19,8 @@ import {
   listBotLogs,
   listSignals,
   loadBotConfig,
+  maskChatId,
+  maskEmail,
   saveBotConfig,
   ServerBotLog,
   ServerBotConfig,
@@ -31,8 +37,89 @@ app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('X-Frame-Options', 'DENY');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self' https: data: blob:; connect-src 'self' https://api.binance.com https://api.coinbase.com https://api.coingecko.com https://api.telegram.org https://api.alternative.me; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; font-src 'self' data: https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+    );
+  }
   next();
 });
+
+const BOT_ADMIN_TOKEN = (process.env.BOT_ADMIN_TOKEN || '').trim();
+const requestBuckets = new Map<string, { count: number; resetAt: number }>();
+let refreshRuntimeLogsCache: (() => void) | null = null;
+
+function persistSecurityLog(type: ServerBotLog['type'], message: string, asset?: string) {
+  const logItem: ServerBotLog = {
+    id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: Date.now(),
+    type,
+    message,
+    asset,
+  };
+  appendBotLog(logItem);
+  if (refreshRuntimeLogsCache) refreshRuntimeLogsCache();
+}
+
+function createRateLimitMiddleware(scope: string, max: number, windowMs: number) {
+  return (req: Request, res: any, next: NextFunction) => {
+    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+    const key = `${scope}:${ip}:${req.path}`;
+    const now = Date.now();
+    const bucket = requestBuckets.get(key);
+
+    if (!bucket || bucket.resetAt <= now) {
+      requestBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    bucket.count += 1;
+    if (bucket.count > max) {
+      persistSecurityLog('SECURITY', `Rate limit exceeded for ${req.method} ${req.path} from ${ip}`);
+      return res.status(429).json({ success: false, error: 'Too many requests. Please slow down.' });
+    }
+
+    return next();
+  };
+}
+
+function extractAdminToken(req: Request) {
+  const headerToken = req.header('x-bot-admin-token') || '';
+  const bearerToken = (req.header('authorization') || '').replace(/^Bearer\s+/i, '');
+  return (headerToken || bearerToken).trim();
+}
+
+function requireBotAdmin(req: Request, res: any, next: NextFunction) {
+  if (!BOT_ADMIN_TOKEN) return next();
+  if (extractAdminToken(req) === BOT_ADMIN_TOKEN) return next();
+  persistSecurityLog('SECURITY', `Unauthorized request blocked for ${req.method} ${req.path}`);
+  return res.status(401).json({ success: false, error: 'Unauthorized bot admin request' });
+}
+
+function readOptionalString(value: unknown, maxLength = 512) {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  return normalized.slice(0, maxLength);
+}
+
+function readOptionalBoolean(value: unknown) {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function readOptionalInteger(value: unknown, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  const normalized = Math.floor(parsed);
+  if (normalized < min || normalized > max) return undefined;
+  return normalized;
+}
+
+const notificationRateLimit = createRateLimitMiddleware('notifications', 40, 60_000);
+const botRateLimit = createRateLimitMiddleware('bot-admin', 180, 60_000);
 
 // Initialize Gemini AI Client with standard user-agent
 const ai = new GoogleGenAI({
@@ -846,37 +933,58 @@ app.post('/api/gemini/learn-mistakes', async (req, res) => {
   }
 });
 
+app.use('/api/notifications', notificationRateLimit, requireBotAdmin);
+
 // 6. Telegram Bot Signal Dispatch & Test Endpoint
 app.post('/api/notifications/telegram-send', async (req, res) => {
-  const { token, chatId, signal, price, customMessage } = req.body;
+  const { token, chatId, signal, price, customMessage } = req.body || {};
+  const effectiveToken = readOptionalString(token, 512) || botConfig.telegramToken;
+  const effectiveChatId = readOptionalString(chatId, 160) || botConfig.telegramChatId;
 
-  if (!token || !chatId) {
+  if (!effectiveToken || !effectiveChatId) {
     return res.status(400).json({ success: false, error: 'Telegram Bot Token and Chat ID are required' });
   }
 
   const messageText =
     customMessage ||
-    `🚀 *إشارة جديدة من منصة EYAD Trading* ⚡\n\n` +
-      `📌 *النوع:* ${signal?.signalType || 'STRONG BUY'}\n` +
-      `💎 *العملة:* ${signal?.asset || 'BTC'}/USDT\n` +
-      `💰 *سعر الدخول:* $${(price || signal?.entryPrice || 88500).toLocaleString()}\n\n` +
-      `🎯 *الأهداف (Take Profit):*\n` +
-      `  • الهدف 1: $${(signal?.target1 || 91200).toLocaleString()} (+3.1%)\n` +
-      `  • الهدف 2: $${(signal?.target2 || 94500).toLocaleString()} (+6.8%)\n` +
-      `  • الهدف 3: $${(signal?.target3 || 99000).toLocaleString()} (+11.8%)\n\n` +
-      `🛑 *وقف الخسارة (Stop Loss):* $${(signal?.stopLoss || 86000).toLocaleString()} (-2.8%)\n` +
-      `🛡️ *إدارة المخاطر:* حماية رأس المال وتفعيل الوقف المتحرك بعد الهدف الأول.\n\n` +
-      `🧠 *ثقة الذكاء الاصطناعي:* ${signal?.convictionScore || 88}%\n` +
-      `📊 *توافق التحليل:* SMC + Elliott Waves + Confluence Gate\n\n` +
-      `🤖 _EYAD Trading Engine v2.5_`;
+    `🚀 *إشارة جديدة من منصة EYAD Trading* ⚡
+
+` +
+      `📌 *النوع:* ${signal?.signalType || 'STRONG BUY'}
+` +
+      `💎 *العملة:* ${signal?.asset || 'BTC'}/USDT
+` +
+      `💰 *سعر الدخول:* $${(price || signal?.entryPrice || 88500).toLocaleString()}
+
+` +
+      `🎯 *الأهداف (Take Profit):*
+` +
+      `  • الهدف 1: $${(signal?.target1 || 91200).toLocaleString()} (+3.1%)
+` +
+      `  • الهدف 2: $${(signal?.target2 || 94500).toLocaleString()} (+6.8%)
+` +
+      `  • الهدف 3: $${(signal?.target3 || 99000).toLocaleString()} (+11.8%)
+
+` +
+      `🛑 *وقف الخسارة (Stop Loss):* $${(signal?.stopLoss || 86000).toLocaleString()} (-2.8%)
+` +
+      `🛡️ *إدارة المخاطر:* حماية رأس المال وتفعيل الوقف المتحرك بعد الهدف الأول.
+
+` +
+      `🧠 *ثقة الذكاء الاصطناعي:* ${signal?.convictionScore || 88}%
+` +
+      `📊 *توافق التحليل:* SMC + Elliott Waves + Confluence Gate
+
+` +
+      `🤖 _EYAD Trading Engine v2.6_`;
 
   try {
-    const tgUrl = `https://api.telegram.org/bot${token}/sendMessage`;
+    const tgUrl = `https://api.telegram.org/bot${effectiveToken}/sendMessage`;
     const tgRes = await fetch(tgUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: chatId,
+        chat_id: effectiveChatId,
         text: messageText,
         parse_mode: 'Markdown',
       }),
@@ -884,72 +992,148 @@ app.post('/api/notifications/telegram-send', async (req, res) => {
 
     const data = await tgRes.json();
     if (data.ok) {
+      appendNotification({
+        id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+        channel: 'TELEGRAM',
+        targetMasked: maskChatId(effectiveChatId),
+        asset: signal?.asset,
+        status: 'SENT',
+        message: 'Telegram signal notification delivered successfully',
+      });
+      addServerLog('ALERT', `Telegram notification delivered to ${maskChatId(effectiveChatId)}`, signal?.asset);
       return res.json({ success: true, message: 'Signal dispatched to Telegram successfully!' });
-    } else {
-      return res.status(400).json({ success: false, error: data.description || 'Telegram API Error' });
     }
+
+    appendNotification({
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: Date.now(),
+      channel: 'TELEGRAM',
+      targetMasked: maskChatId(effectiveChatId),
+      asset: signal?.asset,
+      status: 'FAILED',
+      message: 'Telegram signal notification failed',
+      errorMessage: data.description || 'Telegram API Error',
+    });
+    addServerLog('ERROR', `Telegram send failed: ${data.description || 'Telegram API Error'}`, signal?.asset);
+    return res.status(400).json({ success: false, error: data.description || 'Telegram API Error' });
   } catch (err: any) {
+    appendNotification({
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: Date.now(),
+      channel: 'TELEGRAM',
+      targetMasked: maskChatId(effectiveChatId),
+      asset: signal?.asset,
+      status: 'FAILED',
+      message: 'Telegram connection failed',
+      errorMessage: err.message || 'Failed to connect to Telegram',
+    });
+    addServerLog('ERROR', `Telegram connection failed: ${err.message || 'Unknown error'}`, signal?.asset);
     return res.status(500).json({ success: false, error: err.message || 'Failed to connect to Telegram' });
   }
 });
 
 // 7. Telegram Test Ping
 app.post('/api/notifications/telegram-test', async (req, res) => {
-  const { token, chatId } = req.body;
-  if (!token || !chatId) {
+  const { token, chatId } = req.body || {};
+  const effectiveToken = readOptionalString(token, 512) || botConfig.telegramToken;
+  const effectiveChatId = readOptionalString(chatId, 160) || botConfig.telegramChatId;
+  if (!effectiveToken || !effectiveChatId) {
     return res.status(400).json({ success: false, error: 'Token and Chat ID are required' });
   }
 
   try {
-    const tgUrl = `https://api.telegram.org/bot${token}/sendMessage`;
+    const tgUrl = `https://api.telegram.org/bot${effectiveToken}/sendMessage`;
     const tgRes = await fetch(tgUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: chatId,
-        text: `🟢 *تم ربط منصة EYAD Trading بنجاح!*\n\nالنظام جاهز الآن لإرسال إشارات الدخول وجني الأرباح ووقف الخسارة للأصول (BTC, ETH, PAXG) تلقائياً فور توفر التوافقات العالية.`,
+        chat_id: effectiveChatId,
+        text: `🟢 *تم ربط منصة EYAD Trading بنجاح!*
+
+النظام جاهز الآن لإرسال إشارات الدخول وجني الأرباح ووقف الخسارة للأصول (BTC, ETH, PAXG) تلقائياً فور توفر التوافقات العالية.`,
         parse_mode: 'Markdown',
       }),
     });
 
     const data = await tgRes.json();
     if (data.ok) {
+      appendNotification({
+        id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+        channel: 'TELEGRAM',
+        targetMasked: maskChatId(effectiveChatId),
+        status: 'TEST',
+        message: 'Telegram test ping delivered successfully',
+      });
+      addServerLog('INFO', `Telegram test ping succeeded for ${maskChatId(effectiveChatId)}`);
       return res.json({ success: true, message: 'Test message delivered to Telegram!' });
-    } else {
-      return res.status(400).json({ success: false, error: data.description });
     }
+
+    appendNotification({
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: Date.now(),
+      channel: 'TELEGRAM',
+      targetMasked: maskChatId(effectiveChatId),
+      status: 'FAILED',
+      message: 'Telegram test ping failed',
+      errorMessage: data.description || 'Telegram API Error',
+    });
+    addServerLog('ERROR', `Telegram test failed: ${data.description || 'Unknown Telegram error'}`);
+    return res.status(400).json({ success: false, error: data.description });
   } catch (err: any) {
+    addServerLog('ERROR', `Telegram test exception: ${err.message || 'Unknown error'}`);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // 8. Email Notification Dispatch Simulator / Mailer
 app.post('/api/notifications/email-send', async (req, res) => {
-  const { email, signal, price } = req.body;
-  if (!email) {
+  const { email, signal, price } = req.body || {};
+  const effectiveEmail = readOptionalString(email, 254) || botConfig.emailAddress;
+  if (!effectiveEmail) {
     return res.status(400).json({ success: false, error: 'Email address is required' });
   }
 
-  // Simulated email broadcast logging
-  console.log(`[EMAIL DISPATCH] Sent BTC Spot Signal to ${email} (Action: ${signal?.spotAction || 'BUY'} at $${price})`);
+  console.log(`[EMAIL DISPATCH] Sent BTC Spot Signal to ${effectiveEmail} (Action: ${signal?.spotAction || 'BUY'} at $${price})`);
+  appendNotification({
+    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: Date.now(),
+    channel: 'EMAIL',
+    targetMasked: maskEmail(effectiveEmail),
+    asset: signal?.asset,
+    status: 'SENT',
+    message: 'Email notification simulated successfully',
+  });
+  addServerLog('ALERT', `Email notification simulated for ${maskEmail(effectiveEmail)}`, signal?.asset);
   return res.json({
     success: true,
-    message: `تم إرسال إشعار الإشارة الفورية للبريد الإلكتروني ${email} بنجاح!`,
+    message: `تم إرسال إشعار الإشارة الفورية للبريد الإلكتروني ${effectiveEmail} بنجاح!`,
     timestamp: Date.now(),
   });
 });
 
 // 8.1 Email Test Endpoint (Fixes client mismatch)
 app.post('/api/notifications/email-test', async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
+  const { email } = req.body || {};
+  const effectiveEmail = readOptionalString(email, 254) || botConfig.emailAddress;
+  if (!effectiveEmail) {
     return res.status(400).json({ success: false, error: 'Email address is required' });
   }
 
-  console.log(`[EMAIL TEST DISPATCH] Test ping dispatched successfully to: ${email}`);
+  console.log(`[EMAIL TEST DISPATCH] Test ping dispatched successfully to: ${effectiveEmail}`);
+  appendNotification({
+    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: Date.now(),
+    channel: 'EMAIL',
+    targetMasked: maskEmail(effectiveEmail),
+    status: 'TEST',
+    message: 'Email test notification simulated successfully',
+  });
+  addServerLog('INFO', `Email test notification simulated for ${maskEmail(effectiveEmail)}`);
   return res.json({
     success: true,
-    message: `تم إرسال رسالة اختبار تجريبية إلى بريدك الإلكتروني (${email}) بنجاح!`,
+    message: `تم إرسال رسالة اختبار تجريبية إلى بريدك الإلكتروني (${effectiveEmail}) بنجاح!`,
     timestamp: Date.now(),
   });
 });
@@ -979,16 +1163,12 @@ function getOrCreateRuntimeAssetState(asset: string): AssetRuntimeState {
 }
 
 function addServerLog(type: ServerBotLog['type'], message: string, asset?: string) {
-  const logItem: ServerBotLog = {
-    id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    timestamp: Date.now(),
-    type,
-    message,
-    asset,
-  };
-  appendBotLog(logItem);
-  botState.logs = listBotLogs(100);
+  persistSecurityLog(type, message, asset);
 }
+
+refreshRuntimeLogsCache = () => {
+  botState.logs = listBotLogs(100);
+};
 
 function toUtcTimeLabel(timestamp: number) {
   return new Date(timestamp).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
@@ -1149,16 +1329,45 @@ async function executeBackgroundMarketScan() {
         });
         const tgData = await tgRes.json();
         if (!tgData.ok) {
+          appendNotification({
+            id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            timestamp: Date.now(),
+            channel: 'TELEGRAM',
+            targetMasked: maskChatId(botConfig.telegramChatId),
+            asset: assetKey,
+            status: 'FAILED',
+            message: 'Telegram daemon notification failed',
+            errorMessage: tgData.description || 'Unknown Telegram error',
+          });
           addServerLog('ERROR', `Telegram daemon send failed for ${assetKey}: ${tgData.description || 'Unknown Telegram error'}`, assetKey);
           return;
         }
 
+        appendNotification({
+          id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: Date.now(),
+          channel: 'TELEGRAM',
+          targetMasked: maskChatId(botConfig.telegramChatId),
+          asset: assetKey,
+          status: 'SENT',
+          message: `Telegram daemon notification sent for ${assetKey}`,
+        });
         runtimeState.lastAlertSentAt = now;
         runtimeState.lastSignalHash = signalResult.dedupHash;
         runtimeState.lastKnownPrice = lastPrice;
         upsertAssetState(runtimeState);
         addServerLog('ALERT', `Dispatched ${signal.signalType} automated Telegram alert for ${assetKey}`, assetKey);
       } catch (tErr: any) {
+        appendNotification({
+          id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: Date.now(),
+          channel: 'TELEGRAM',
+          targetMasked: maskChatId(botConfig.telegramChatId),
+          asset: assetKey,
+          status: 'FAILED',
+          message: 'Telegram daemon exception',
+          errorMessage: tErr.message || 'Unknown error',
+        });
         addServerLog('ERROR', `Failed sending background telegram alert: ${tErr.message}`, assetKey);
       }
     }));
@@ -1170,6 +1379,25 @@ async function executeBackgroundMarketScan() {
 }
 
 scheduleNextBackgroundScan(5000);
+
+app.get('/api/bot/public-status', (req, res) => {
+  return res.json({
+    success: true,
+    daemon: {
+      active: botConfig.active,
+      lastScanTime: botState.lastScanTime,
+      scanIntervalSeconds: botConfig.scanIntervalSeconds,
+      scanInProgress: backgroundScanInProgress,
+      requiresAdminToken: Boolean(BOT_ADMIN_TOKEN),
+      securityMode: BOT_ADMIN_TOKEN ? 'protected' : 'open',
+    },
+  });
+});
+
+app.use('/api/bot', botRateLimit, (req, res, next) => {
+  if (req.path === '/public-status') return next();
+  return requireBotAdmin(req as Request, res, next);
+});
 
 app.get('/api/bot/status', (req, res) => {
   return res.json({
@@ -1183,8 +1411,14 @@ app.get('/api/bot/status', (req, res) => {
       lastKnownPrices: botState.lastKnownPrices,
       telegramConfigured: Boolean(botConfig.telegramEnabled && botConfig.telegramToken && botConfig.telegramChatId),
       scanIntervalSeconds: botConfig.scanIntervalSeconds,
-      databasePath: botState.dbPath,
+      databaseEngine: 'SQLite WAL',
+      databasePathLabel: path.relative(process.cwd(), botState.dbPath),
       scanInProgress: backgroundScanInProgress,
+      requiresAdminToken: Boolean(BOT_ADMIN_TOKEN),
+      securityMode: BOT_ADMIN_TOKEN ? 'protected' : 'open',
+      logCount: countBotLogs(),
+      signalCount: countSignals(),
+      notificationCount: countNotifications(),
     },
     config: getSafeConfigForClient(botConfig),
   });
@@ -1194,6 +1428,7 @@ app.get('/api/bot/config', (req, res) => {
   botConfig = loadBotConfig();
   return res.json({
     success: true,
+    requiresAdminToken: Boolean(BOT_ADMIN_TOKEN),
     config: getSafeConfigForClient(botConfig),
   });
 });
@@ -1202,15 +1437,13 @@ app.post('/api/bot/config', (req, res) => {
   const { active, telegramEnabled, telegramToken, telegramChatId, emailEnabled, emailAddress, scanIntervalSeconds } = req.body || {};
   const nextConfig: ServerBotConfig = {
     ...botConfig,
-    active: typeof active === 'boolean' ? active : botConfig.active,
-    telegramEnabled: typeof telegramEnabled === 'boolean' ? telegramEnabled : botConfig.telegramEnabled,
-    telegramToken: typeof telegramToken === 'string' && telegramToken.trim() ? telegramToken.trim() : botConfig.telegramToken,
-    telegramChatId: typeof telegramChatId === 'string' && telegramChatId.trim() ? telegramChatId.trim() : botConfig.telegramChatId,
-    emailEnabled: typeof emailEnabled === 'boolean' ? emailEnabled : botConfig.emailEnabled,
-    emailAddress: typeof emailAddress === 'string' && emailAddress.trim() ? emailAddress.trim() : botConfig.emailAddress,
-    scanIntervalSeconds: typeof scanIntervalSeconds === 'number' && scanIntervalSeconds >= 10
-      ? Math.floor(scanIntervalSeconds)
-      : botConfig.scanIntervalSeconds,
+    active: readOptionalBoolean(active) ?? botConfig.active,
+    telegramEnabled: readOptionalBoolean(telegramEnabled) ?? botConfig.telegramEnabled,
+    telegramToken: readOptionalString(telegramToken, 512) || botConfig.telegramToken,
+    telegramChatId: readOptionalString(telegramChatId, 160) || botConfig.telegramChatId,
+    emailEnabled: readOptionalBoolean(emailEnabled) ?? botConfig.emailEnabled,
+    emailAddress: readOptionalString(emailAddress, 254) || botConfig.emailAddress,
+    scanIntervalSeconds: readOptionalInteger(scanIntervalSeconds, 10, 86400) ?? botConfig.scanIntervalSeconds,
   };
 
   botConfig = saveBotConfig(nextConfig);
@@ -1230,23 +1463,23 @@ app.post('/api/bot/scan-now', async (req, res) => {
 });
 
 app.get('/api/bot/logs', (req, res) => {
-  const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
+  const limit = readOptionalInteger(req.query.limit, 1, 500) || 100;
   const logs = listBotLogs(limit);
   return res.json({
     success: true,
     logs,
-    count: logs.length,
+    count: countBotLogs(),
   });
 });
 
 app.get('/api/bot/signals', (req, res) => {
-  const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 100));
+  const limit = readOptionalInteger(req.query.limit, 1, 500) || 100;
   const asset = typeof req.query.asset === 'string' ? req.query.asset.toUpperCase() : undefined;
   const signals = listSignals(limit, asset);
   return res.json({
     success: true,
     signals,
-    count: signals.length,
+    count: countSignals(),
   });
 });
 
