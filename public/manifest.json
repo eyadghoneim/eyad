@@ -1,0 +1,17 @@
+{
+  "name": "EYAD Trading Bot Pro",
+  "short_name": "EYAD BOT",
+  "description": "Institutional AI Multi-Asset Trading Platform & Signals",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#f59e0b",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
