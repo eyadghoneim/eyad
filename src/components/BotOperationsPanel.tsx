@@ -185,7 +185,7 @@ export const BotOperationsPanel: React.FC<BotOperationsPanelProps> = ({ lang, cu
           <div className="flex items-center gap-2 text-white font-bold"><TerminalSquare className="w-4 h-4 text-purple-400" /><span>{lang === 'ar' ? 'الحماية والقيود' : 'Security posture'}</span></div>
           <div className="space-y-2 text-xs text-gray-300">
             <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3">{lang === 'ar' ? 'النقاط الحساسة محمية الآن بطبقة same-origin + rate limiting + security headers، مع إخفاء التوكنات تماماً عن الواجهة.' : 'Sensitive mutations now use same-origin checks, rate limiting, security headers, and never expose raw secrets to the UI.'}</div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3">{lang === 'ar' ? 'تم إلغاء البريد الإلكتروني نهائياً، وأصبحت كل الإشعارات عبر تلجرام فقط.' : 'Email was removed completely. Telegram is now the only alert channel.'}</div>
+            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3">{lang === 'ar' ? 'قناة التنبيهات المعتمدة حالياً هي تلجرام، مع استمرار حماية التوكنات وإخفائها عن الواجهة.' : 'Telegram is the active alert channel, while secrets remain masked and protected from the UI.'}</div>
             <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3 font-mono text-[11px]">{lang === 'ar' ? 'نسخة المخطط:' : 'Schema version:'} <span className="text-white font-bold">{dbStats?.schemaVersion ?? 0}</span><br />{lang === 'ar' ? 'آخر تنظيف:' : 'Last prune:'} <span className="text-white font-bold">{dbStats?.lastPrunedAt ? new Date(dbStats.lastPrunedAt).toLocaleString() : '--'}</span></div>
           </div>
         </div>

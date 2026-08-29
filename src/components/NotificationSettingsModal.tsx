@@ -137,7 +137,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
 
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/10 p-3 text-[11px] text-emerald-300 flex items-start gap-2">
           <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-emerald-400" />
-          <div>{lang === 'ar' ? 'تم إلغاء البريد الإلكتروني نهائياً. كل الإشعارات الآن عبر تلجرام فقط.' : 'Email is fully removed. All alerts now use Telegram only.'}</div>
+          <div>{lang === 'ar' ? 'هذه الشاشة مخصصة لإعدادات تلجرام وإشعارات المتصفح وتثبيت التطبيق.' : 'This panel focuses on Telegram, browser notifications, and app installation.'}</div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

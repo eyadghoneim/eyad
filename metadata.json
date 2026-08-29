@@ -1,6 +1,6 @@
 {
   "name": "EYAD Trading",
-  "description": "The ultimate AI-powered multi-asset trading platform featuring Smart Money Concepts (SMC), Elliott Wave theory, multi-indicator confluence, 1-year backtesting, self-learning mistake memory engine, and Telegram/Email alert integrations.",
+  "description": "The ultimate AI-powered multi-asset trading platform featuring Smart Money Concepts (SMC), Elliott Wave theory, multi-indicator confluence, 1-year backtesting, a self-learning mistake memory engine, and Telegram alert integrations.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
