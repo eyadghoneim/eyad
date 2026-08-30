@@ -161,7 +161,7 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
 
                 <div className={`text-xs font-mono font-semibold flex items-center gap-0.5 ${isPos ? 'text-emerald-400' : 'text-rose-400'}`}>
                   <TrendingUp className={`w-3 h-3 ${!isPos && 'rotate-180'}`} />
-                  {isPos ? '+' : ''}{item.change24h.toFixed(2)}%
+                  {isPos ? '+' : ''}{(item.change24h || 0).toFixed(2)}%
                 </div>
               </div>
 

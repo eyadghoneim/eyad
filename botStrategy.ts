@@ -1,7 +1,7 @@
-import type { AIReasoning, Candle, LiquidityRegimeScorecard, SupportedAsset } from './src/types.ts';
-import { analyzeElliottWave } from './src/utils/elliottWave.ts';
-import { analyzeSMC } from './src/utils/smcAnalysis.ts';
-import { calculateAllIndicators } from './src/utils/technicalAnalysis.ts';
+import type { AIReasoning, Candle, LiquidityRegimeScorecard, SupportedAsset } from './src/types';
+import { analyzeElliottWave } from './src/utils/elliottWave';
+import { analyzeSMC } from './src/utils/smcAnalysis';
+import { calculateAllIndicators } from './src/utils/technicalAnalysis';
 
 export interface DeterministicSignalContext {
   asset: SupportedAsset;

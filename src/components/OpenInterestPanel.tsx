@@ -80,7 +80,7 @@ export const OpenInterestPanel: React.FC<OpenInterestPanelProps> = ({ lang, curr
             <div className="rounded-lg border border-[#222] bg-[#0d0d0d] p-3"><div className="text-gray-500">{lang === 'ar' ? 'إجمالي OI التقريبي' : 'Approx total OI'}</div><div className="text-orange-300 text-lg font-bold">${compactUsd(data.totalOpenInterestUsd || 0)}</div></div>
             <div className="rounded-lg border border-[#222] bg-[#0d0d0d] p-3"><div className="text-gray-500">{lang === 'ar' ? 'الأصل النشط' : 'Focused asset'}</div><div className="text-white text-lg font-bold">{currentAsset}</div></div>
             <div className="rounded-lg border border-[#222] bg-[#0d0d0d] p-3"><div className="text-gray-500">{lang === 'ar' ? 'سعر الأصل الحالي' : 'Current price'}</div><div className="text-white text-lg font-bold">{highlightedAsset?.available ? `$${compactUsd(highlightedAsset.lastPrice)}` : '--'}</div></div>
-            <div className="rounded-lg border border-[#222] bg-[#0d0d0d] p-3"><div className="text-gray-500">24h</div><div className={`text-lg font-bold ${(highlightedAsset?.priceChange24h || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{highlightedAsset?.available ? `${(highlightedAsset?.priceChange24h || 0) > 0 ? '+' : ''}${highlightedAsset?.priceChange24h.toFixed(2)}%` : '--'}</div></div>
+            <div className="rounded-lg border border-[#222] bg-[#0d0d0d] p-3"><div className="text-gray-500">24h</div><div className={`text-lg font-bold ${(highlightedAsset?.priceChange24h || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{highlightedAsset?.available ? `${(highlightedAsset?.priceChange24h || 0) > 0 ? '+' : ''}${(highlightedAsset?.priceChange24h || 0).toFixed(2)}%` : '--'}</div></div>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -90,7 +90,7 @@ export const OpenInterestPanel: React.FC<OpenInterestPanelProps> = ({ lang, curr
                 <div className="text-gray-500">{item.symbol}</div>
                 <div className="text-orange-300 text-lg font-bold">${compactUsd(item.openInterestUsd)}</div>
                 <div className="text-gray-300">{lang === 'ar' ? 'العقود المفتوحة:' : 'Open contracts:'} <span className="text-white font-bold">{compactUsd(item.openInterestContracts)}</span></div>
-                <div className={`text-[11px] ${(item.priceChange24h || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{lang === 'ar' ? 'تغير السعر 24 ساعة:' : '24h price change:'} {item.available ? `${item.priceChange24h > 0 ? '+' : ''}${item.priceChange24h.toFixed(2)}%` : '--'}</div>
+                <div className={`text-[11px] ${(item.priceChange24h || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{lang === 'ar' ? 'تغير السعر 24 ساعة:' : '24h price change:'} {item.available ? `${(item.priceChange24h || 0) > 0 ? '+' : ''}${(item.priceChange24h || 0).toFixed(2)}%` : '--'}</div>
               </div>
             ))}
           </div>

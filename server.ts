@@ -3,7 +3,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
-import { buildDeterministicSignal } from './botStrategy.ts';
+import { buildDeterministicSignal } from './botStrategy';
 import {
   getBridgeFlowOverview,
   getLiquidityRegimeSnapshot,
@@ -12,7 +12,7 @@ import {
   getLlamaDexOverview,
   getLlamaStablecoinChains,
   getOpenInterestOverview,
-} from './llamaService.ts';
+} from './llamaService';
 import {
   appendBotLog,
   appendNotification,
@@ -33,7 +33,8 @@ import {
   ServerBotLog,
   ServerBotConfig,
   upsertAssetState,
-} from './botPersistence.ts';
+  DEFAULT_BOT_CONFIG,
+} from './botPersistence';
 
 dotenv.config();
 
@@ -66,9 +67,9 @@ function persistSecurityLog(type: ServerBotLog['type'], message: string, asset?:
     timestamp: Date.now(),
     type,
     message,
-    asset,
+    ...(asset ? { asset } : {}),
   };
-  appendBotLog(logItem);
+  appendBotLog(logItem).catch(console.error);
   if (refreshRuntimeLogsCache) refreshRuntimeLogsCache();
 }
 
@@ -140,7 +141,7 @@ const ai = new GoogleGenAI({
 });
 
 // 1. Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   res.json({ status: 'ok', bot: 'EYAD Trading Engine', version: '2.5.0' });
 });
 
@@ -555,7 +556,7 @@ app.get('/api/market/sentiment', async (req, res) => {
 });
 
 // 3.5 Macroeconomic Calendar & High-Impact Events Filter (CPI / FOMC / NFP / Rate Decisions)
-app.get('/api/market/macro-events', (req, res) => {
+app.get('/api/market/macro-events', async (req, res) => {
   const now = Date.now();
   const ONE_HOUR = 3600 * 1000;
 
@@ -1074,7 +1075,7 @@ app.post('/api/notifications/telegram-send', async (req, res) => {
 
     const data = await tgRes.json();
     if (data.ok) {
-      appendNotification({
+      await appendNotification({
         id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         timestamp: Date.now(),
         channel: 'TELEGRAM',
@@ -1087,7 +1088,7 @@ app.post('/api/notifications/telegram-send', async (req, res) => {
       return res.json({ success: true, message: 'Signal dispatched to Telegram successfully!' });
     }
 
-    appendNotification({
+    await appendNotification({
       id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       timestamp: Date.now(),
       channel: 'TELEGRAM',
@@ -1100,7 +1101,7 @@ app.post('/api/notifications/telegram-send', async (req, res) => {
     addServerLog('ERROR', `Telegram send failed: ${data.description || 'Telegram API Error'}`, signal?.asset);
     return res.status(400).json({ success: false, error: data.description || 'Telegram API Error' });
   } catch (err: any) {
-    appendNotification({
+    await appendNotification({
       id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       timestamp: Date.now(),
       channel: 'TELEGRAM',
@@ -1140,7 +1141,7 @@ app.post('/api/notifications/telegram-test', async (req, res) => {
 
     const data = await tgRes.json();
     if (data.ok) {
-      appendNotification({
+      await appendNotification({
         id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         timestamp: Date.now(),
         channel: 'TELEGRAM',
@@ -1152,7 +1153,7 @@ app.post('/api/notifications/telegram-test', async (req, res) => {
       return res.json({ success: true, message: 'Test message delivered to Telegram!' });
     }
 
-    appendNotification({
+    await appendNotification({
       id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       timestamp: Date.now(),
       channel: 'TELEGRAM',
@@ -1173,22 +1174,22 @@ app.post('/api/notifications/telegram-test', async (req, res) => {
 // 8. SERVER-SIDE MARKET WATCHER & STRATEGY DAEMON (24/7 BACKGROUND WORKER)
 // =========================================================================
 
-let botConfig: ServerBotConfig = loadBotConfig();
-const runtimeAssetStates = new Map<string, AssetRuntimeState>(listAssetStates().map((item) => [item.asset, item]));
+let botConfig: ServerBotConfig = DEFAULT_BOT_CONFIG;
+const runtimeAssetStates = new Map<string, AssetRuntimeState>();
 const botState = {
   startedAt: Date.now(),
   lastScanTime: 0,
   scanCount: 0,
   monitoredAssets: ['BTC', 'ETH', 'PAXG'],
-  lastKnownPrices: Object.fromEntries(listAssetStates().map((item) => [item.asset, item.lastKnownPrice || 0])) as Record<string, number>,
-  logs: listBotLogs(100) as ServerBotLog[],
+  lastKnownPrices: {},
+  logs: [],
   dbPath: getDbPath(),
 };
 
-function getOrCreateRuntimeAssetState(asset: string): AssetRuntimeState {
+async function getOrCreateRuntimeAssetState(asset: string): Promise<AssetRuntimeState> {
   const existing = runtimeAssetStates.get(asset);
   if (existing) return existing;
-  const state = getAssetState(asset);
+  const state = await getAssetState(asset);
   runtimeAssetStates.set(asset, state);
   return state;
 }
@@ -1197,8 +1198,8 @@ function addServerLog(type: ServerBotLog['type'], message: string, asset?: strin
   persistSecurityLog(type, message, asset);
 }
 
-refreshRuntimeLogsCache = () => {
-  botState.logs = listBotLogs(100);
+refreshRuntimeLogsCache = async () => {
+  botState.logs = await listBotLogs(100);
 };
 
 function toUtcTimeLabel(timestamp: number) {
@@ -1299,7 +1300,7 @@ async function executeBackgroundMarketScan() {
       const liquidityRegime = await getLiquidityRegimeSnapshot(assetKey as any);
       const signalResult = buildDeterministicSignal({ asset: assetKey as any, candles, change24h: priceChangePct, liquidityRegime });
       const signal = signalResult.signal;
-      const runtimeState = getOrCreateRuntimeAssetState(assetKey);
+      const runtimeState = await getOrCreateRuntimeAssetState(assetKey);
       const now = Date.now();
       const cooldownMs = 2 * 60 * 60 * 1000;
       const eligibleSignal = signal.spotAction === 'SPOT_BUY' || signal.spotAction === 'SPOT_SELL_ALL';
@@ -1307,10 +1308,10 @@ async function executeBackgroundMarketScan() {
 
       botState.lastKnownPrices[assetKey] = lastPrice;
       runtimeState.lastKnownPrice = lastPrice;
-      upsertAssetState(runtimeState);
+      await upsertAssetState(runtimeState);
 
       if (eligibleSignal) {
-        appendSignal({
+        await appendSignal({
           id: `sig_${assetKey}_${now}`,
           timestamp: now,
           asset: assetKey,
@@ -1362,7 +1363,7 @@ async function executeBackgroundMarketScan() {
         });
         const tgData = await tgRes.json();
         if (!tgData.ok) {
-          appendNotification({
+          await appendNotification({
             id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             timestamp: Date.now(),
             channel: 'TELEGRAM',
@@ -1376,7 +1377,7 @@ async function executeBackgroundMarketScan() {
           return;
         }
 
-        appendNotification({
+        await appendNotification({
           id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           timestamp: Date.now(),
           channel: 'TELEGRAM',
@@ -1388,10 +1389,10 @@ async function executeBackgroundMarketScan() {
         runtimeState.lastAlertSentAt = now;
         runtimeState.lastSignalHash = signalResult.dedupHash;
         runtimeState.lastKnownPrice = lastPrice;
-        upsertAssetState(runtimeState);
+        await upsertAssetState(runtimeState);
         addServerLog('ALERT', `Dispatched ${signal.signalType} automated Telegram alert for ${assetKey}`, assetKey);
       } catch (tErr: any) {
-        appendNotification({
+        await appendNotification({
           id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           timestamp: Date.now(),
           channel: 'TELEGRAM',
@@ -1413,7 +1414,7 @@ async function executeBackgroundMarketScan() {
 
 scheduleNextBackgroundScan(5000);
 
-app.get('/api/bot/public-status', (req, res) => {
+app.get('/api/bot/public-status', async (req, res) => {
   return res.json({
     success: true,
     daemon: {
@@ -1432,7 +1433,7 @@ app.use('/api/bot', botRateLimit, (req, res, next) => {
   return requireBotAdmin(req as Request, res, next);
 });
 
-app.get('/api/bot/status', (req, res) => {
+app.get('/api/bot/status', async (req, res) => {
   return res.json({
     success: true,
     daemon: {
@@ -1449,16 +1450,16 @@ app.get('/api/bot/status', (req, res) => {
       scanInProgress: backgroundScanInProgress,
       requiresAdminToken: Boolean(BOT_ADMIN_TOKEN),
       securityMode: BOT_ADMIN_TOKEN ? 'protected' : 'open',
-      logCount: countBotLogs(),
-      signalCount: countSignals(),
-      notificationCount: countNotifications(),
+      logCount: await countBotLogs(),
+      signalCount: await countSignals(),
+      notificationCount: await countNotifications(),
     },
     config: getSafeConfigForClient(botConfig),
   });
 });
 
-app.get('/api/bot/config', (req, res) => {
-  botConfig = loadBotConfig();
+app.get('/api/bot/config', async (req, res) => {
+  botConfig = await loadBotConfig();
   return res.json({
     success: true,
     requiresAdminToken: Boolean(BOT_ADMIN_TOKEN),
@@ -1466,7 +1467,7 @@ app.get('/api/bot/config', (req, res) => {
   });
 });
 
-app.post('/api/bot/config', (req, res) => {
+app.post('/api/bot/config', async (req, res) => {
   const { active, telegramEnabled, telegramToken, telegramChatId, scanIntervalSeconds } = req.body || {};
   const nextConfig: ServerBotConfig = {
     ...botConfig,
@@ -1477,7 +1478,7 @@ app.post('/api/bot/config', (req, res) => {
     scanIntervalSeconds: readOptionalInteger(scanIntervalSeconds, 10, 86400) ?? botConfig.scanIntervalSeconds,
   };
 
-  botConfig = saveBotConfig(nextConfig);
+  botConfig = await saveBotConfig(nextConfig);
   addServerLog('INFO', `Server bot config updated (Telegram: ${botConfig.telegramEnabled ? 'On' : 'Off'}, Interval: ${botConfig.scanIntervalSeconds}s)`);
   scheduleNextBackgroundScan(1000);
 
@@ -1493,28 +1494,41 @@ app.post('/api/bot/scan-now', async (req, res) => {
   return res.json({ success: true, message: 'Background scan executed', at: Date.now() });
 });
 
-app.get('/api/bot/logs', (req, res) => {
+app.get('/api/bot/logs', async (req, res) => {
   const limit = readOptionalInteger(req.query.limit, 1, 500) || 100;
-  const logs = listBotLogs(limit);
+  const logs = await listBotLogs(limit);
   return res.json({
     success: true,
     logs,
-    count: countBotLogs(),
+    count: await countBotLogs(),
   });
 });
 
-app.get('/api/bot/signals', (req, res) => {
+app.get('/api/bot/signals', async (req, res) => {
   const limit = readOptionalInteger(req.query.limit, 1, 500) || 100;
   const asset = typeof req.query.asset === 'string' ? req.query.asset.toUpperCase() : undefined;
-  const signals = listSignals(limit, asset);
+  const signals = await listSignals(limit, asset);
   return res.json({
     success: true,
     signals,
-    count: countSignals(),
+    count: await countSignals(),
   });
 });
 
+
+async function initBotState() {
+  botConfig = await loadBotConfig();
+  const states = await listAssetStates();
+  for (const item of states) {
+    runtimeAssetStates.set(item.asset, item);
+    botState.lastKnownPrices[item.asset] = item.lastKnownPrice || 0;
+  }
+  botState.logs = await listBotLogs(100);
+}
+
 async function startServer() {
+  await initBotState();
+
   // Vite middleware in dev mode
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -1525,7 +1539,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', async (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

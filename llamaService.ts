@@ -1,4 +1,4 @@
-import type { LiquidityRegimeScorecard, SupportedAsset } from './src/types.ts';
+import type { LiquidityRegimeScorecard, SupportedAsset } from './src/types';
 
 type CacheEntry<T = any> = {
   expiresAt: number;
@@ -307,6 +307,8 @@ async function getHyperliquidOpenInterestAssets() {
     const ctx = assetCtxs[index] || {};
     const openInterestContracts = toNumber(ctx?.openInterest);
     const lastPrice = toNumber(ctx?.markPx || ctx?.oraclePx || ctx?.midPx);
+    const prevDayPx = toNumber(ctx?.prevDayPx);
+    const priceChange24h = prevDayPx > 0 ? ((lastPrice - prevDayPx) / prevDayPx) * 100 : 0;
 
     return {
       asset,
@@ -316,6 +318,7 @@ async function getHyperliquidOpenInterestAssets() {
       openInterestContracts,
       openInterestUsd: Number((openInterestContracts * lastPrice).toFixed(2)),
       lastPrice,
+      priceChange24h,
       fundingRate: Number((toNumber(ctx?.funding) * 100).toFixed(4)),
       premiumPct: Number((toNumber(ctx?.premium) * 100).toFixed(4)),
       dayNotionalVolume: toNumber(ctx?.dayNtlVlm),

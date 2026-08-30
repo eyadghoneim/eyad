@@ -1,0 +1,105 @@
+{
+  "entities": {
+    "BotConfig": {
+      "title": "Bot Configuration",
+      "description": "Global singleton configuration for trading bot daemon and Telegram alerts",
+      "type": "object",
+      "properties": {
+        "active": { "type": "boolean" },
+        "telegramEnabled": { "type": "boolean" },
+        "telegramToken": { "type": "string" },
+        "telegramChatId": { "type": "string" },
+        "scanIntervalSeconds": { "type": "number" }
+      },
+      "required": ["active", "telegramEnabled", "scanIntervalSeconds"]
+    },
+    "BotLog": {
+      "title": "Bot Daemon Log",
+      "description": "System, audit, strategy, and security log entries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "type": { "type": "string", "enum": ["INFO", "SIGNAL", "ALERT", "ERROR", "SECURITY", "WARN"] },
+        "message": { "type": "string" },
+        "asset": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "type", "message"]
+    },
+    "BotSignal": {
+      "title": "Bot Signal",
+      "description": "Persisted technical analysis and liquidity regime signals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "asset": { "type": "string" },
+        "signalType": { "type": "string" },
+        "spotAction": { "type": "string" },
+        "convictionScore": { "type": "number" },
+        "price": { "type": "number" },
+        "change24h": { "type": "number" },
+        "entryPrice": { "type": "number" },
+        "stopLoss": { "type": "number" },
+        "target1": { "type": "number" },
+        "target2": { "type": "number" },
+        "target3": { "type": "number" },
+        "summaryAr": { "type": "string" },
+        "summaryEn": { "type": "string" },
+        "metadataJson": { "type": "string" },
+        "dedupHash": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "asset", "signalType", "spotAction", "price"]
+    },
+    "AssetState": {
+      "title": "Asset Runtime State",
+      "description": "Per-asset tracking state for price and deduplication",
+      "type": "object",
+      "properties": {
+        "asset": { "type": "string" },
+        "lastKnownPrice": { "type": "number" },
+        "lastAlertSentAt": { "type": "number" },
+        "lastSignalHash": { "type": "string" }
+      },
+      "required": ["asset"]
+    },
+    "NotificationRecord": {
+      "title": "Notification Record",
+      "description": "Delivered alert and Telegram notification logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "channel": { "type": "string" },
+        "targetMasked": { "type": "string" },
+        "asset": { "type": "string" },
+        "status": { "type": "string" },
+        "message": { "type": "string" },
+        "errorMessage": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "channel", "targetMasked", "status", "message"]
+    }
+  },
+  "firestore": {
+    "/bot_config/{configId}": {
+      "schema": "BotConfig",
+      "description": "Singleton configuration document for the bot daemon"
+    },
+    "/bot_logs/{logId}": {
+      "schema": "BotLog",
+      "description": "Collection of server background and security logs"
+    },
+    "/bot_signals/{signalId}": {
+      "schema": "BotSignal",
+      "description": "Collection of generated trading signals"
+    },
+    "/bot_asset_state/{assetId}": {
+      "schema": "AssetState",
+      "description": "Per-asset runtime state cache"
+    },
+    "/bot_notifications/{notificationId}": {
+      "schema": "NotificationRecord",
+      "description": "Notification history log"
+    }
+  }
+}
