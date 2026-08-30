@@ -62,6 +62,6 @@ BOT_ADMIN_TOKEN=change-this-to-a-long-random-secret
 ```
 
 - `BOT_ADMIN_TOKEN` يفعّل حماية نقاط `/api/bot/*` و `/api/notifications/*` الحساسة.
-- قاعدة البيانات الآن تعمل عبر **SQLite + WAL** داخل `data/eyad-bot.sqlite`.
+- قاعدة البيانات تعمل سحابياً عبر **Firebase Firestore** لضمان استمرارية التخزين وعمل البوت 24/7 دون فقدان البيانات.
 - الواجهة تعرض سجل الإشارات واللوجز مباشرة من قاعدة البيانات عبر تبويب **Bot Ops & Logs**.
 - رمز الإدارة يُدخل من الواجهة ويُحفظ في `sessionStorage` فقط، وليس `localStorage`.

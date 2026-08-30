@@ -682,9 +682,9 @@ app.get('/api/market/macro-events', async (req, res) => {
 // Helper for resilient Gemini API calls with multi-tier model fallback
 async function callGeminiWithResilience(prompt: string, temperature = 0.2) {
   const candidateModels = [
-    'gemini-3.7-flash',
-    'gemini-flash-latest',
-    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash-lite',
   ];
 
   for (const model of candidateModels) {

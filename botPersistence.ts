@@ -1,5 +1,5 @@
-import { db } from './serverFirebaseAdmin.js';
-import { collection, doc, getDoc, getDocs, setDoc, query, where, orderBy, limit as fLimit, getCountFromServer } from 'firebase/firestore';
+import { db } from './serverFirebaseAdmin';
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, where, orderBy, limit as fLimit, getCountFromServer } from 'firebase/firestore';
 
 export interface ServerBotConfig {
   active: boolean;
@@ -191,7 +191,6 @@ export async function appendBotLog(log: ServerBotLog): Promise<void> {
 }
 
 export async function listBotLogs(limit = 100, type?: ServerBotLog['type']): Promise<ServerBotLog[]> {
-  console.log("listBotLogs called", limit);
   if (!db) return [];
   try {
     const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
@@ -260,13 +259,21 @@ export async function getSignalStats(): Promise<BotSignalStats> {
       stats.lastSignalAt = lastSnap.docs[0].data().timestamp || 0;
     }
     
-    const allSignals = await getDocs(collection(db, 'bot_signals'));
-    allSignals.docs.forEach(doc => {
-      const asset = doc.data().asset;
-      if (asset) {
-        stats.byAsset[asset] = (stats.byAsset[asset] || 0) + 1;
-      }
-    });
+    // Efficiently aggregate counts for monitored assets without full table scan
+    const trackedAssets = ['BTC', 'ETH', 'PAXG', 'SOL'];
+    await Promise.all(
+      trackedAssets.map(async (assetName) => {
+        try {
+          const cSnap = await getCountFromServer(query(collection(db!, 'bot_signals'), where('asset', '==', assetName)));
+          const count = cSnap.data().count;
+          if (count > 0) {
+            stats.byAsset[assetName] = count;
+          }
+        } catch {
+          // ignore per-asset count errors
+        }
+      })
+    );
 
   } catch (e) {
     console.error('getSignalStats error', e);
@@ -274,8 +281,42 @@ export async function getSignalStats(): Promise<BotSignalStats> {
   return stats;
 }
 
+let lastPruneExecution = 0;
 export async function pruneData(): Promise<void> {
-  await setMeta('last_pruned_at', String(Date.now()));
+  const now = Date.now();
+  // Throttle pruning to at most once every 10 minutes to save Firestore operations
+  if (now - lastPruneExecution < 10 * 60 * 1000) return;
+  lastPruneExecution = now;
+
+  if (!db) return;
+
+  try {
+    // 1. Prune logs exceeding MAX_LOG_ROWS
+    const logCountSnap = await getCountFromServer(collection(db, 'bot_logs'));
+    const totalLogs = logCountSnap.data().count;
+    if (totalLogs > MAX_LOG_ROWS) {
+      const deleteCount = Math.min(50, totalLogs - MAX_LOG_ROWS);
+      const oldestLogs = await getDocs(query(collection(db, 'bot_logs'), orderBy('timestamp', 'asc'), fLimit(deleteCount)));
+      for (const d of oldestLogs.docs) {
+        await deleteDoc(d.ref).catch(() => {});
+      }
+    }
+
+    // 2. Prune signals exceeding MAX_SIGNAL_ROWS
+    const signalCountSnap = await getCountFromServer(collection(db, 'bot_signals'));
+    const totalSignals = signalCountSnap.data().count;
+    if (totalSignals > MAX_SIGNAL_ROWS) {
+      const deleteCount = Math.min(50, totalSignals - MAX_SIGNAL_ROWS);
+      const oldestSignals = await getDocs(query(collection(db, 'bot_signals'), orderBy('timestamp', 'asc'), fLimit(deleteCount)));
+      for (const d of oldestSignals.docs) {
+        await deleteDoc(d.ref).catch(() => {});
+      }
+    }
+
+    await setMeta('last_pruned_at', String(now));
+  } catch (err) {
+    console.error('[Firebase] pruneData error:', err);
+  }
 }
 
 export async function getPersistenceHealth(): Promise<PersistenceHealth> {
