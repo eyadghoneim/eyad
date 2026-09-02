@@ -1,5 +1,64 @@
 import { db } from './serverFirebaseAdmin';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, where, orderBy, limit as fLimit, getCountFromServer } from 'firebase/firestore';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const LOCAL_DATA_DIR = path.join(process.cwd(), 'data');
+const LOCAL_CONFIG_FILE = path.join(LOCAL_DATA_DIR, 'bot_config.json');
+const LOCAL_SIGNALS_FILE = path.join(LOCAL_DATA_DIR, 'signals.json');
+const LOCAL_LOGS_FILE = path.join(LOCAL_DATA_DIR, 'logs.json');
+const LOCAL_NOTIFS_FILE = path.join(LOCAL_DATA_DIR, 'notifications.json');
+
+function loadLocalList<T>(filePath: string): T[] {
+  try {
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function saveLocalList<T>(filePath: string, items: T[]) {
+  try {
+    ensureDataDirExists();
+    fs.writeFileSync(filePath, JSON.stringify(items.slice(0, 500), null, 2), 'utf-8');
+  } catch {
+    // ignore
+  }
+}
+
+function ensureDataDirExists() {
+  try {
+    if (!fs.existsSync(LOCAL_DATA_DIR)) {
+      fs.mkdirSync(LOCAL_DATA_DIR, { recursive: true });
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function loadLocalConfigFile(): Partial<ServerBotConfig> | null {
+  try {
+    if (fs.existsSync(LOCAL_CONFIG_FILE)) {
+      const raw = fs.readFileSync(LOCAL_CONFIG_FILE, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.warn('[Persistence] Failed to read local fallback config:', e);
+  }
+  return null;
+}
+
+function saveLocalConfigFile(config: ServerBotConfig) {
+  try {
+    ensureDataDirExists();
+    fs.writeFileSync(LOCAL_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[Persistence] Failed to write local fallback config:', e);
+  }
+}
 
 export interface ServerBotConfig {
   active: boolean;
@@ -124,24 +183,49 @@ export async function setMeta(key: string, value: string): Promise<void> {
 }
 
 export async function loadBotConfig(): Promise<ServerBotConfig> {
-  if (!db) return DEFAULT_BOT_CONFIG;
-  try {
-    const docSnap = await getDoc(doc(db, 'bot_config', 'singleton'));
-    if (docSnap.exists()) {
-      return { ...DEFAULT_BOT_CONFIG, ...(docSnap.data() as Partial<ServerBotConfig>) };
-    }
-  } catch (e) {
-    console.error('loadBotConfig error', e);
+  let loadedConfig: ServerBotConfig = { ...DEFAULT_BOT_CONFIG };
+
+  // 1. Try local backup file first
+  const localConfig = loadLocalConfigFile();
+  if (localConfig) {
+    loadedConfig = { ...loadedConfig, ...localConfig };
   }
-  return DEFAULT_BOT_CONFIG;
+
+  // 2. Try Firestore if available (overrides local if present)
+  if (db) {
+    try {
+      const docSnap = await getDoc(doc(db, 'bot_config', 'singleton'));
+      if (docSnap.exists()) {
+        loadedConfig = { ...loadedConfig, ...(docSnap.data() as Partial<ServerBotConfig>) };
+      }
+    } catch (e) {
+      console.error('loadBotConfig firestore error', e);
+    }
+  }
+
+  // 3. Fallback to environment variables if tokens are not set in config
+  if (!loadedConfig.telegramToken && process.env.TELEGRAM_BOT_TOKEN) {
+    loadedConfig.telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+    loadedConfig.telegramEnabled = true;
+  }
+  if (!loadedConfig.telegramChatId && process.env.TELEGRAM_CHAT_ID) {
+    loadedConfig.telegramChatId = process.env.TELEGRAM_CHAT_ID;
+  }
+
+  return loadedConfig;
 }
 
 export async function saveBotConfig(nextConfig: ServerBotConfig): Promise<ServerBotConfig> {
-  if (!db) return nextConfig;
-  try {
-    await setDoc(doc(db, 'bot_config', 'singleton'), sanitizeForFirestore(nextConfig), { merge: true });
-  } catch (e) {
-    console.error('saveBotConfig error', e);
+  // Always save local backup
+  saveLocalConfigFile(nextConfig);
+
+  // Also save to Firestore if connected
+  if (db) {
+    try {
+      await setDoc(doc(db, 'bot_config', 'singleton'), sanitizeForFirestore(nextConfig), { merge: true });
+    } catch (e) {
+      console.error('saveBotConfig firestore error', e);
+    }
   }
   return nextConfig;
 }
@@ -181,6 +265,10 @@ export async function listAssetStates(): Promise<AssetRuntimeState[]> {
 }
 
 export async function appendBotLog(log: ServerBotLog): Promise<void> {
+  const localLogs = loadLocalList<ServerBotLog>(LOCAL_LOGS_FILE);
+  localLogs.unshift(log);
+  saveLocalList(LOCAL_LOGS_FILE, localLogs);
+
   if (!db) return;
   try {
     await setDoc(doc(db, 'bot_logs', log.id), sanitizeForFirestore(log));
@@ -191,22 +279,34 @@ export async function appendBotLog(log: ServerBotLog): Promise<void> {
 }
 
 export async function listBotLogs(limit = 100, type?: ServerBotLog['type']): Promise<ServerBotLog[]> {
-  if (!db) return [];
-  try {
-    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
-    let q = query(collection(db, 'bot_logs'), orderBy('timestamp', 'desc'), fLimit(safeLimit));
-    if (type) {
-      q = query(collection(db, 'bot_logs'), where('type', '==', type), orderBy('timestamp', 'desc'), fLimit(safeLimit));
+  if (db) {
+    try {
+      const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+      let q = query(collection(db, 'bot_logs'), orderBy('timestamp', 'desc'), fLimit(safeLimit));
+      if (type) {
+        q = query(collection(db, 'bot_logs'), where('type', '==', type), orderBy('timestamp', 'desc'), fLimit(safeLimit));
+      }
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return snap.docs.map(d => d.data() as ServerBotLog);
+      }
+    } catch (e) {
+      console.error('listBotLogs error', e);
     }
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as ServerBotLog);
-  } catch (e) {
-    console.error('listBotLogs error', e);
-    return [];
   }
+
+  const localLogs = loadLocalList<ServerBotLog>(LOCAL_LOGS_FILE);
+  if (type) {
+    return localLogs.filter(l => l.type === type).slice(0, limit);
+  }
+  return localLogs.slice(0, limit);
 }
 
 export async function appendSignal(signal: PersistedBotSignal): Promise<void> {
+  const localSignals = loadLocalList<PersistedBotSignal>(LOCAL_SIGNALS_FILE);
+  localSignals.unshift(signal);
+  saveLocalList(LOCAL_SIGNALS_FILE, localSignals);
+
   if (!db) return;
   try {
     await setDoc(doc(db, 'bot_signals', signal.id), sanitizeForFirestore(signal));
@@ -217,19 +317,27 @@ export async function appendSignal(signal: PersistedBotSignal): Promise<void> {
 }
 
 export async function listSignals(limit = 100, asset?: string): Promise<PersistedBotSignal[]> {
-  if (!db) return [];
-  try {
-    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
-    let q = query(collection(db, 'bot_signals'), orderBy('timestamp', 'desc'), fLimit(safeLimit));
-    if (asset) {
-      q = query(collection(db, 'bot_signals'), where('asset', '==', String(asset).toUpperCase()), orderBy('timestamp', 'desc'), fLimit(safeLimit));
+  if (db) {
+    try {
+      const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+      let q = query(collection(db, 'bot_signals'), orderBy('timestamp', 'desc'), fLimit(safeLimit));
+      if (asset) {
+        q = query(collection(db, 'bot_signals'), where('asset', '==', String(asset).toUpperCase()), orderBy('timestamp', 'desc'), fLimit(safeLimit));
+      }
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return snap.docs.map(d => d.data() as PersistedBotSignal);
+      }
+    } catch (e) {
+      console.error('listSignals error', e);
     }
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as PersistedBotSignal);
-  } catch (e) {
-    console.error('listSignals error', e);
-    return [];
   }
+
+  const localSignals = loadLocalList<PersistedBotSignal>(LOCAL_SIGNALS_FILE);
+  if (asset) {
+    return localSignals.filter(s => s.asset.toUpperCase() === String(asset).toUpperCase()).slice(0, limit);
+  }
+  return localSignals.slice(0, limit);
 }
 
 export async function getSignalStats(): Promise<BotSignalStats> {
@@ -367,6 +475,10 @@ export function getSafeConfigForClient(config: ServerBotConfig) {
 }
 
 export async function appendNotification(notification: NotificationRecord): Promise<void> {
+  const localNotifs = loadLocalList<NotificationRecord>(LOCAL_NOTIFS_FILE);
+  localNotifs.unshift(notification);
+  saveLocalList(LOCAL_NOTIFS_FILE, localNotifs);
+
   if (!db) return;
   try {
     await setDoc(doc(db, 'bot_notifications', notification.id), sanitizeForFirestore(notification));
@@ -377,33 +489,57 @@ export async function appendNotification(notification: NotificationRecord): Prom
 }
 
 export async function countBotLogs(): Promise<number> {
-  if (!db) return 0;
-  try {
-    const snap = await getCountFromServer(collection(db, 'bot_logs'));
-    return snap.data().count;
-  } catch (e) {
-    return 0;
+  if (db) {
+    try {
+      const snap = await getCountFromServer(collection(db, 'bot_logs'));
+      return snap.data().count;
+    } catch {
+      // fallback
+    }
   }
+  return loadLocalList<ServerBotLog>(LOCAL_LOGS_FILE).length;
 }
 
 export async function countSignals(): Promise<number> {
-  if (!db) return 0;
-  try {
-    const snap = await getCountFromServer(collection(db, 'bot_signals'));
-    return snap.data().count;
-  } catch (e) {
-    return 0;
+  if (db) {
+    try {
+      const snap = await getCountFromServer(collection(db, 'bot_signals'));
+      return snap.data().count;
+    } catch {
+      // fallback
+    }
   }
+  return loadLocalList<PersistedBotSignal>(LOCAL_SIGNALS_FILE).length;
 }
 
 export async function countNotifications(): Promise<number> {
-  if (!db) return 0;
-  try {
-    const snap = await getCountFromServer(collection(db, 'bot_notifications'));
-    return snap.data().count;
-  } catch (e) {
-    return 0;
+  if (db) {
+    try {
+      const snap = await getCountFromServer(collection(db, 'bot_notifications'));
+      return snap.data().count;
+    } catch {
+      // fallback
+    }
   }
+  return loadLocalList<NotificationRecord>(LOCAL_NOTIFS_FILE).length;
+}
+
+export async function listNotifications(limit = 100): Promise<NotificationRecord[]> {
+  if (db) {
+    try {
+      const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+      const q = query(collection(db, 'bot_notifications'), orderBy('timestamp', 'desc'), fLimit(safeLimit));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return snap.docs.map(d => d.data() as NotificationRecord);
+      }
+    } catch (e) {
+      console.error('listNotifications error', e);
+    }
+  }
+
+  const localNotifs = loadLocalList<NotificationRecord>(LOCAL_NOTIFS_FILE);
+  return localNotifs.slice(0, limit);
 }
 
 export function getDbPath() {

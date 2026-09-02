@@ -126,14 +126,14 @@ export function App() {
         const parsed = JSON.parse(saved);
         return {
           telegramEnabled: Boolean(parsed.telegramEnabled),
-          telegramToken: '',
-          telegramChatId: '',
+          telegramToken: parsed.telegramToken || '',
+          telegramChatId: parsed.telegramChatId || '',
           soundEnabled: parsed.soundEnabled !== undefined ? Boolean(parsed.soundEnabled) : true,
           autoScanIntervalSeconds: Number(parsed.autoScanIntervalSeconds) || 300,
-          serverHasTelegramToken: Boolean(parsed.serverHasTelegramToken),
-          serverHasTelegramChatId: Boolean(parsed.serverHasTelegramChatId),
-          maskedTelegramToken: parsed.maskedTelegramToken || '',
-          maskedTelegramChatId: parsed.maskedTelegramChatId || '',
+          serverHasTelegramToken: Boolean(parsed.serverHasTelegramToken || parsed.telegramToken),
+          serverHasTelegramChatId: Boolean(parsed.serverHasTelegramChatId || parsed.telegramChatId),
+          maskedTelegramToken: parsed.maskedTelegramToken || (parsed.telegramToken ? `${parsed.telegramToken.slice(0, 4)}••••${parsed.telegramToken.slice(-4)}` : ''),
+          maskedTelegramChatId: parsed.maskedTelegramChatId || (parsed.telegramChatId ? `${parsed.telegramChatId.slice(0, 2)}••••${parsed.telegramChatId.slice(-2)}` : ''),
         };
       } catch (e) {}
     }
@@ -156,8 +156,22 @@ export function App() {
     if (saved) {
       try { 
         const parsed = JSON.parse(saved);
+        // Sanitize legacy glitched trades (e.g. cross-asset leak where ETH had PAXG $4,392 price)
+        const validHistory = (parsed.tradeHistory || []).filter((t: any) => {
+          const isGlitch = (t.asset === 'ETH' && t.exitPrice > 3500) || 
+                           (t.asset === 'ETH' && t.entryPrice > 3500) || 
+                           Math.abs(t.pnlPercent) > 60;
+          return !isGlitch;
+        });
+        const recalculatedRealized = Number(validHistory.reduce((sum: number, t: any) => sum + (Number(t.pnlUsd) || 0), 0).toFixed(2));
+        const currentAllocated = (parsed.positions || []).reduce((sum: number, p: any) => sum + (Number(p.allocatedUsd) || 0), 0);
+        const correctedBalance = Number((10000 + recalculatedRealized - currentAllocated).toFixed(2));
+
         return {
           ...parsed,
+          virtualBalanceUsd: Math.max(0, correctedBalance),
+          totalRealizedPnlUsd: recalculatedRealized,
+          tradeHistory: validHistory,
           autoExecuteSignals: parsed.autoExecuteSignals !== undefined ? parsed.autoExecuteSignals : true,
         };
       } catch (e) {}
@@ -178,6 +192,8 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('eyad_btc_alert_config', JSON.stringify({
       telegramEnabled: alertConfig.telegramEnabled,
+      telegramToken: alertConfig.telegramToken || '',
+      telegramChatId: alertConfig.telegramChatId || '',
       soundEnabled: alertConfig.soundEnabled,
       autoScanIntervalSeconds: alertConfig.autoScanIntervalSeconds,
       serverHasTelegramToken: alertConfig.serverHasTelegramToken,
@@ -203,12 +219,12 @@ export function App() {
           ...prev,
           telegramEnabled: typeof cfg.telegramEnabled === 'boolean' ? cfg.telegramEnabled : prev.telegramEnabled,
           autoScanIntervalSeconds: Number(cfg.scanIntervalSeconds) || prev.autoScanIntervalSeconds,
-          serverHasTelegramToken: Boolean(cfg.hasTelegramToken),
-          serverHasTelegramChatId: Boolean(cfg.hasTelegramChatId),
-          maskedTelegramToken: cfg.maskedTelegramToken || '',
-          maskedTelegramChatId: cfg.maskedTelegramChatId || '',
-          telegramToken: '',
-          telegramChatId: '',
+          serverHasTelegramToken: Boolean(cfg.hasTelegramToken || prev.serverHasTelegramToken),
+          serverHasTelegramChatId: Boolean(cfg.hasTelegramChatId || prev.serverHasTelegramChatId),
+          maskedTelegramToken: cfg.maskedTelegramToken || prev.maskedTelegramToken,
+          maskedTelegramChatId: cfg.maskedTelegramChatId || prev.maskedTelegramChatId,
+          telegramToken: prev.telegramToken || '',
+          telegramChatId: prev.telegramChatId || '',
         }));
       } catch (e) {
         // silent background hydration failure
@@ -252,38 +268,41 @@ export function App() {
             ? data.candles
             : [];
 
-          setCandles((prev) => {
-            let updatedCandles: Candle[];
-            if (liveCandles.length >= 20) {
-              updatedCandles = liveCandles;
-            } else if (!prev || prev.length < 50) {
-              updatedCandles = generate1YearAssetData(targetAsset, livePrice);
-            } else {
-              updatedCandles = [...prev];
-              const last = { ...updatedCandles[updatedCandles.length - 1] };
-              last.close = livePrice;
-              last.high = Math.max(last.high, livePrice);
-              last.low = Math.min(last.low, livePrice);
-              updatedCandles[updatedCandles.length - 1] = last;
-            }
+          // Only update candles and AI signal if targetAsset is the active currentAsset!
+          if (targetAsset === currentAsset) {
+            setCandles((prev) => {
+              let updatedCandles: Candle[];
+              if (liveCandles.length >= 20) {
+                updatedCandles = liveCandles;
+              } else if (!prev || prev.length < 50) {
+                updatedCandles = generate1YearAssetData(targetAsset, livePrice);
+              } else {
+                updatedCandles = [...prev];
+                const last = { ...updatedCandles[updatedCandles.length - 1] };
+                last.close = livePrice;
+                last.high = Math.max(last.high, livePrice);
+                last.low = Math.min(last.low, livePrice);
+                updatedCandles[updatedCandles.length - 1] = last;
+              }
 
-            // Recalculate indicators and update signal targets on real candles
-            const calcInd = calculateAllIndicators(updatedCandles);
-            const atr = calcInd.atr || (livePrice * 0.015);
-            setAiSignal((prevSig) => {
-              if (!prevSig) return null;
-              return {
-                ...prevSig,
-                entryPrice: Math.round(livePrice),
-                target1: Math.round(livePrice + 4 * atr),
-                target2: Math.round(livePrice + 6 * atr),
-                target3: Math.round(livePrice + 8 * atr),
-                stopLoss: Math.round(livePrice - 2 * atr),
-              };
+              // Recalculate indicators and update signal targets on real candles
+              const calcInd = calculateAllIndicators(updatedCandles);
+              const atr = calcInd.atr || (livePrice * 0.015);
+              setAiSignal((prevSig) => {
+                if (!prevSig) return null;
+                return {
+                  ...prevSig,
+                  entryPrice: Math.round(livePrice),
+                  target1: Math.round(livePrice + 4 * atr),
+                  target2: Math.round(livePrice + 6 * atr),
+                  target3: Math.round(livePrice + 8 * atr),
+                  stopLoss: Math.round(livePrice - 2 * atr),
+                };
+              });
+
+              return updatedCandles;
             });
-
-            return updatedCandles;
-          });
+          }
 
           // Update multiAssetData cache
           setMultiAssetData((prev) => ({
@@ -611,13 +630,12 @@ export function App() {
   useEffect(() => {
     if (!btcPrice) return;
     
-    // Construct current live prices mapping for all assets
+    // Construct current live prices mapping for all assets strictly isolated
     const livePrices: Record<SupportedAsset, number> = {
-      BTC: multiAssetData['BTC']?.price || (currentAsset === 'BTC' ? btcPrice : 77696),
-      ETH: multiAssetData['ETH']?.price || (currentAsset === 'ETH' ? btcPrice : 2436),
-      PAXG: multiAssetData['PAXG']?.price || (currentAsset === 'PAXG' ? btcPrice : 4456),
+      BTC: currentAsset === 'BTC' ? btcPrice : (multiAssetData['BTC']?.price || 77696),
+      ETH: currentAsset === 'ETH' ? btcPrice : (multiAssetData['ETH']?.price || 2436),
+      PAXG: currentAsset === 'PAXG' ? btcPrice : (multiAssetData['PAXG']?.price || 4456),
     };
-    livePrices[currentAsset] = btcPrice;
 
     setPaperAccount((prevAccount) => {
       // 1. Evaluate open positions for TP1 partial exit, TP2/TP3 take profit, Stop-Loss, Trailing Stop, Sell Signal

@@ -19,7 +19,9 @@ import {
   ArrowDownRight,
   Bot,
   Sparkles,
-  Activity
+  Activity,
+  Trash2,
+  Wand2
 } from 'lucide-react';
 import { PaperAccount, PaperPosition, AIReasoning, SupportedAsset, TradeRecord } from '../types';
 
@@ -157,6 +159,40 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
       autoExecuteSignals: true,
     });
     setShowResetConfirm(false);
+  };
+
+  // Delete individual trade from history and adjust realized PnL
+  const handleDeleteTrade = (tradeId: string) => {
+    setPaperAccount((prev) => {
+      const trade = prev.tradeHistory.find((t) => t.id === tradeId);
+      if (!trade) return prev;
+      const newHistory = prev.tradeHistory.filter((t) => t.id !== tradeId);
+      const newRealized = Number((prev.totalRealizedPnlUsd - trade.pnlUsd).toFixed(2));
+      const newBalance = Number((prev.virtualBalanceUsd - trade.pnlUsd).toFixed(2));
+      return {
+        ...prev,
+        virtualBalanceUsd: Math.max(0, newBalance),
+        totalRealizedPnlUsd: newRealized,
+        tradeHistory: newHistory,
+      };
+    });
+  };
+
+  // Clean abnormal / glitched trades (e.g., cross-asset prices)
+  const handleCleanGlitchedTrades = () => {
+    setPaperAccount((prev) => {
+      const validHistory = prev.tradeHistory.filter((t) => {
+        const isGlitch = (t.asset === 'ETH' && t.exitPrice > 4000) || Math.abs(t.pnlPercent) > 50;
+        return !isGlitch;
+      });
+      const newRealized = Number(validHistory.reduce((acc, t) => acc + t.pnlUsd, 0).toFixed(2));
+      return {
+        ...prev,
+        virtualBalanceUsd: Number((10000 + newRealized - prev.allocatedCapitalUsd).toFixed(2)),
+        totalRealizedPnlUsd: newRealized,
+        tradeHistory: validHistory,
+      };
+    });
   };
 
   return (
@@ -485,14 +521,24 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
       {/* Trade History Log Table */}
       {paperAccount.tradeHistory.length > 0 && (
         <div className="space-y-2 pt-2 border-t border-[#1f1f1f]">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span className="text-xs font-bold text-white flex items-center gap-1.5">
               <History className="w-3.5 h-3.5 text-purple-400" />
               {lang === 'ar' ? 'سجل الصفقات المنجزة والنتائج المحققة:' : 'Executed Trades & Realized Results:'}
             </span>
-            <span className="text-[11px] text-gray-500">
-              {paperAccount.tradeHistory.length} {lang === 'ar' ? 'صفقات منتهية' : 'executed trades'}
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCleanGlitchedTrades}
+                title={lang === 'ar' ? 'مسح الصفقات ذات الأسعار الخاطئة وتحديث المحفظة' : 'Clean abnormal trades'}
+                className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-950/50 hover:bg-purple-900/60 text-purple-300 border border-purple-500/30 flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <Wand2 className="w-3 h-3" />
+                <span>{lang === 'ar' ? 'تصحيح وتنظيف الصفقات الخاطئة' : 'Auto Clean Glitches'}</span>
+              </button>
+              <span className="text-[11px] text-gray-500">
+                {paperAccount.tradeHistory.length} {lang === 'ar' ? 'صفقات منتهية' : 'executed trades'}
+              </span>
+            </div>
           </div>
 
           <div className="overflow-x-auto max-h-56 border border-[#1a1a1a] rounded">
@@ -505,6 +551,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
                   <th className="p-2">{lang === 'ar' ? 'سعر الخروج' : 'Exit'}</th>
                   <th className="p-2">{lang === 'ar' ? 'الربح / الخسارة' : 'PnL'}</th>
                   <th className="p-2">{lang === 'ar' ? 'سبب الخروج والنتيجة' : 'Exit Reason & Note'}</th>
+                  <th className="p-2 text-center">{lang === 'ar' ? 'حذف' : 'Del'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#181818] bg-[#0a0a0a]">
@@ -518,6 +565,15 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
                       {trade.pnlPercent >= 0 ? '+' : ''}{trade.pnlPercent}% (${trade.pnlUsd})
                     </td>
                     <td className="p-2 text-gray-400 truncate max-w-xs">{trade.confluenceReason}</td>
+                    <td className="p-2 text-center">
+                      <button
+                        onClick={() => handleDeleteTrade(trade.id)}
+                        title={lang === 'ar' ? 'حذف هذه الصفقة' : 'Delete trade'}
+                        className="p-1 rounded text-gray-500 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -16,6 +16,23 @@ export interface AutoTradeExecutionResult {
 }
 
 /**
+ * Validates that a price makes sense for a given asset to prevent cross-asset corruption
+ */
+export function isPriceSanityValid(asset: SupportedAsset, price: number): boolean {
+  if (typeof price !== 'number' || isNaN(price) || price <= 0) return false;
+  switch (asset) {
+    case 'BTC':
+      return price >= 20000 && price <= 300000;
+    case 'ETH':
+      return price >= 500 && price <= 10000;
+    case 'PAXG':
+      return price >= 1000 && price <= 15000;
+    default:
+      return true;
+  }
+}
+
+/**
  * Automatically evaluates and updates open paper trading positions
  * Handles:
  * 1. Mark-to-market live PnL calculation
@@ -48,12 +65,15 @@ export function evaluatePaperPositionsAuto(
   const events: AutoTradeExecutionResult['events'] = [];
 
   for (const pos of account.positions) {
-    const livePrice = livePrices[pos.asset] || pos.currentPrice || pos.entryPrice;
-    if (livePrice <= 0) {
+    const rawPrice = livePrices[pos.asset] || pos.currentPrice || pos.entryPrice;
+    
+    // Strict asset-specific sanity guard to prevent cross-asset leakage (e.g. PAXG $4,392 leaking into ETH)
+    if (!isPriceSanityValid(pos.asset, rawPrice)) {
       survivingPositions.push(pos);
       continue;
     }
 
+    const livePrice = rawPrice;
     const curVal = pos.amount * livePrice;
     const pnlUsd = curVal - pos.allocatedUsd;
     const pnlPct = (pnlUsd / pos.allocatedUsd) * 100;
@@ -71,6 +91,7 @@ export function evaluatePaperPositionsAuto(
     let closeReason = '';
     let closeReasonAr = '';
     let closeEventType: AutoTradeExecutionResult['events'][0]['type'] = 'TP2';
+    let executionExitPrice = livePrice;
 
     // Condition 1: Bot AI issues SPOT_SELL_ALL or STRONG_SELL signal
     const isBotSellSignal = 
@@ -80,6 +101,7 @@ export function evaluatePaperPositionsAuto(
 
     if (isBotSellSignal) {
       shouldClose = true;
+      executionExitPrice = livePrice;
       closeReason = `🤖 Auto Exit: Bot issued SPOT_SELL_ALL signal at $${livePrice.toLocaleString()}`;
       closeReasonAr = `🤖 إغلاق آلي: صدور إشارة بيع وخروج كامل (SPOT_SELL_ALL) من البوت عند $${livePrice.toLocaleString()}`;
       closeEventType = 'SELL_SIGNAL';
@@ -87,30 +109,40 @@ export function evaluatePaperPositionsAuto(
     // Condition 2: Full Take Profit 2 Target Hit
     else if (pos.tp2 > 0 && livePrice >= pos.tp2) {
       shouldClose = true;
-      closeReason = `🎯 Auto TP2 Hit: Target $${pos.tp2.toLocaleString()} reached! Locked +${pnlPct.toFixed(1)}% profit.`;
-      closeReasonAr = `🎯 تحقيق الهدف الثاني TP2 تلقائياً عند $${pos.tp2.toLocaleString()} بنجاح (ربح +${pnlPct.toFixed(1)}%)`;
+      // In realistic limit order fills, TP2 fills at target price or close to it
+      executionExitPrice = pos.tp2;
+      const targetPnlUsd = (pos.amount * pos.tp2) - pos.allocatedUsd;
+      const targetPnlPct = (targetPnlUsd / pos.allocatedUsd) * 100;
+      closeReason = `🎯 Auto TP2 Hit: Target $${pos.tp2.toLocaleString()} reached! Locked +${targetPnlPct.toFixed(1)}% profit.`;
+      closeReasonAr = `🎯 تحقيق الهدف الثاني TP2 تلقائياً عند $${pos.tp2.toLocaleString()} بنجاح (ربح +${targetPnlPct.toFixed(1)}%)`;
       closeEventType = 'TP2';
     }
     // Condition 3: Strict Stop Loss Hit (2x ATR Protection)
     else if (pos.stopLoss > 0 && livePrice <= pos.stopLoss) {
       shouldClose = true;
-      closeReason = `🛑 Auto Stop-Loss: Protected capital at $${pos.stopLoss.toLocaleString()} (${pnlPct.toFixed(1)}%).`;
-      closeReasonAr = `🛑 تفعيل وقف الخسارة الصارم آلياً عند $${pos.stopLoss.toLocaleString()} لحماية المحفظة (${pnlPct.toFixed(1)}%)`;
+      executionExitPrice = pos.stopLoss;
+      const slPnlUsd = (pos.amount * pos.stopLoss) - pos.allocatedUsd;
+      const slPnlPct = (slPnlUsd / pos.allocatedUsd) * 100;
+      closeReason = `🛑 Auto Stop-Loss: Protected capital at $${pos.stopLoss.toLocaleString()} (${slPnlPct.toFixed(1)}%).`;
+      closeReasonAr = `🛑 تفعيل وقف الخسارة الصارم آلياً عند $${pos.stopLoss.toLocaleString()} لحماية المحفظة (${slPnlPct.toFixed(1)}%)`;
       closeEventType = 'STOP_LOSS';
     }
     // Condition 4: Trailing Stop Hit after peak retracement
     else if (trailingStopPrice && trailingStopPrice > pos.entryPrice && livePrice <= trailingStopPrice) {
       shouldClose = true;
-      closeReason = `🔒 Auto Trailing Stop: Locked gains at $${trailingStopPrice.toLocaleString()} (+${pnlPct.toFixed(1)}%).`;
-      closeReasonAr = `🔒 تفعيل الوقف المتحرك آلياً عند $${trailingStopPrice.toLocaleString()} وتأمين الأرباح (+${pnlPct.toFixed(1)}%)`;
+      executionExitPrice = trailingStopPrice;
+      const trailPnlUsd = (pos.amount * trailingStopPrice) - pos.allocatedUsd;
+      const trailPnlPct = (trailPnlUsd / pos.allocatedUsd) * 100;
+      closeReason = `🔒 Auto Trailing Stop: Locked gains at $${trailingStopPrice.toLocaleString()} (+${trailPnlPct.toFixed(1)}%).`;
+      closeReasonAr = `🔒 تفعيل الوقف المتحرك آلياً عند $${trailingStopPrice.toLocaleString()} وتأمين الأرباح (+${trailPnlPct.toFixed(1)}%)`;
       closeEventType = 'TRAILING_STOP';
     }
 
     if (shouldClose) {
-      // Execute automated liquidation
-      const finalReturnUsd = pos.amount * livePrice;
-      const tradePnlUsd = Number(pnlUsd.toFixed(2));
-      const tradePnlPct = Number(pnlPct.toFixed(2));
+      // Execute automated liquidation with accurate executed price
+      const finalReturnUsd = pos.amount * executionExitPrice;
+      const tradePnlUsd = Number((finalReturnUsd - pos.allocatedUsd).toFixed(2));
+      const tradePnlPct = Number(((tradePnlUsd / pos.allocatedUsd) * 100).toFixed(2));
 
       currentVirtualBalance = Number((currentVirtualBalance + finalReturnUsd).toFixed(2));
       currentAllocatedCapital = Number(Math.max(0, currentAllocatedCapital - pos.allocatedUsd).toFixed(2));
@@ -125,8 +157,8 @@ export function evaluatePaperPositionsAuto(
         dayOfWeek: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getUTCDay()],
         action: 'BUY',
         entryPrice: pos.entryPrice,
-        exitPrice: livePrice,
-        currentPrice: livePrice,
+        exitPrice: executionExitPrice,
+        currentPrice: executionExitPrice,
         amountBtc: pos.amount,
         capitalUsd: pos.allocatedUsd,
         pnlUsd: tradePnlUsd,
@@ -149,7 +181,7 @@ export function evaluatePaperPositionsAuto(
       events.push({
         type: closeEventType,
         asset: pos.asset,
-        price: livePrice,
+        price: executionExitPrice,
         pnlUsd: tradePnlUsd,
         pnlPercent: tradePnlPct,
         messageAr: closeReasonAr,
@@ -168,7 +200,7 @@ export function evaluatePaperPositionsAuto(
         events.push({
           type: 'TP1',
           asset: pos.asset,
-          price: livePrice,
+          price: pos.tp1,
           pnlUsd: Number(pnlUsd.toFixed(2)),
           pnlPercent: Number(pnlPct.toFixed(2)),
           messageAr: `🎯 تم الوصول للهدف الأول TP1 ($${pos.tp1.toLocaleString()}) لـ ${pos.asset} - تم رفع وقف الخسارة إلى سعر الدخول وتفعيل الوقف المتحرك!`,
@@ -219,7 +251,7 @@ export function autoOpenPaperTradeOnSignal(
     return { updatedAccount: account, opened: false };
   }
 
-  if (livePrice <= 0) {
+  if (!isPriceSanityValid(asset, livePrice)) {
     return { updatedAccount: account, opened: false };
   }
 
@@ -240,15 +272,32 @@ export function autoOpenPaperTradeOnSignal(
     return { updatedAccount: account, opened: false };
   }
 
-  const investUsd = Number(((account.virtualBalanceUsd * allocationPercent) / 100).toFixed(2));
-  if (investUsd < 15) {
+  // Dynamic Risk-Based Position Sizing: Maximum risk of 2% of Total Portfolio per trade
+  // Formula: Invested Amount = (Portfolio * MaxRiskPct) / (SL Risk Pct)
+  const totalPortfolioValue = account.virtualBalanceUsd + account.allocatedCapitalUsd;
+  const targetRiskPct = 0.02; // 2% maximum portfolio risk at Stop Loss
+  const maxRiskUsd = totalPortfolioValue * targetRiskPct;
+
+  const calculatedStopLoss = aiSignal.stopLoss && aiSignal.stopLoss < livePrice 
+    ? aiSignal.stopLoss 
+    : Math.round(livePrice * 0.974);
+
+  const slDistancePct = Math.max(0.012, (livePrice - calculatedStopLoss) / livePrice);
+  const idealInvestUsd = maxRiskUsd / slDistancePct;
+
+  // Bound allocation between 10% and 30% of available cash
+  const maxAllocationUsd = account.virtualBalanceUsd * 0.30;
+  const minAllocationUsd = Math.min(account.virtualBalanceUsd, 25);
+  const investUsd = Number(Math.min(maxAllocationUsd, Math.max(minAllocationUsd, idealInvestUsd)).toFixed(2));
+
+  if (investUsd < 15 || account.virtualBalanceUsd < investUsd) {
     return { updatedAccount: account, opened: false };
   }
 
   const amount = investUsd / livePrice;
   const tp1 = aiSignal.target1 || Math.round(livePrice * 1.035);
   const tp2 = aiSignal.target2 || Math.round(livePrice * 1.07);
-  const stopLoss = aiSignal.stopLoss || Math.round(livePrice * 0.974);
+  const stopLoss = calculatedStopLoss;
 
   const newPosition: PaperPosition = {
     id: `pos_auto_${Date.now()}_${asset}`,

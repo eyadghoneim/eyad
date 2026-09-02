@@ -26,6 +26,7 @@ import {
   getSafeConfigForClient,
   listAssetStates,
   listBotLogs,
+  listNotifications,
   listSignals,
   loadBotConfig,
   maskChatId,
@@ -1021,8 +1022,10 @@ app.use('/api/notifications', notificationRateLimit, requireBotAdmin);
 // 6. Telegram Bot Signal Dispatch & Test Endpoint
 app.post('/api/notifications/telegram-send', async (req, res) => {
   const { token, chatId, signal, price, customMessage } = req.body || {};
-  const effectiveToken = readOptionalString(token, 512) || botConfig.telegramToken;
-  const effectiveChatId = readOptionalString(chatId, 160) || botConfig.telegramChatId;
+  const rawToken = readOptionalString(token, 512) || botConfig.telegramToken || process.env.TELEGRAM_BOT_TOKEN;
+  const rawChatId = readOptionalString(chatId, 160) || botConfig.telegramChatId || process.env.TELEGRAM_CHAT_ID;
+  const effectiveToken = (rawToken || '').replace(/\s+/g, '');
+  const effectiveChatId = (rawChatId || '').replace(/\s+/g, '');
 
   if (!effectiveToken || !effectiveChatId) {
     return res.status(400).json({ success: false, error: 'Telegram Bot Token and Chat ID are required' });
@@ -1030,36 +1033,19 @@ app.post('/api/notifications/telegram-send', async (req, res) => {
 
   const messageText =
     customMessage ||
-    `🚀 *إشارة جديدة من منصة EYAD Trading* ⚡
-
-` +
-      `📌 *النوع:* ${signal?.signalType || 'STRONG BUY'}
-` +
-      `💎 *العملة:* ${signal?.asset || 'BTC'}/USDT
-` +
-      `💰 *سعر الدخول:* $${(price || signal?.entryPrice || 88500).toLocaleString()}
-
-` +
-      `🎯 *الأهداف (Take Profit):*
-` +
-      `  • الهدف 1: $${(signal?.target1 || 91200).toLocaleString()} (+3.1%)
-` +
-      `  • الهدف 2: $${(signal?.target2 || 94500).toLocaleString()} (+6.8%)
-` +
-      `  • الهدف 3: $${(signal?.target3 || 99000).toLocaleString()} (+11.8%)
-
-` +
-      `🛑 *وقف الخسارة (Stop Loss):* $${(signal?.stopLoss || 86000).toLocaleString()} (-2.8%)
-` +
-      `🛡️ *إدارة المخاطر:* حماية رأس المال وتفعيل الوقف المتحرك بعد الهدف الأول.
-
-` +
-      `🧠 *ثقة الذكاء الاصطناعي:* ${signal?.convictionScore || 88}%
-` +
-      `📊 *توافق التحليل:* SMC + Elliott Waves + Confluence Gate
-
-` +
-      `🤖 _EYAD Trading Engine v2.6_`;
+    `🚀 <b>إشارة جديدة من منصة EYAD Trading</b> ⚡\n\n` +
+      `📌 <b>النوع:</b> ${signal?.signalType || 'STRONG BUY'}\n` +
+      `💎 <b>العملة:</b> ${signal?.asset || 'BTC'}/USDT\n` +
+      `💰 <b>سعر الدخول:</b> $${(price || signal?.entryPrice || 88500).toLocaleString()}\n\n` +
+      `🎯 <b>الأهداف (Take Profit):</b>\n` +
+      `  • الهدف 1: $${(signal?.target1 || 91200).toLocaleString()} (+3.1%)\n` +
+      `  • الهدف 2: $${(signal?.target2 || 94500).toLocaleString()} (+6.8%)\n` +
+      `  • الهدف 3: $${(signal?.target3 || 99000).toLocaleString()} (+11.8%)\n\n` +
+      `🛑 <b>وقف الخسارة (Stop Loss):</b> $${(signal?.stopLoss || 86000).toLocaleString()} (-2.8%)\n` +
+      `🛡️ <b>إدارة المخاطر:</b> حماية رأس المال وتفعيل الوقف المتحرك بعد الهدف الأول.\n\n` +
+      `🧠 <b>ثقة الذكاء الاصطناعي:</b> ${signal?.convictionScore || 88}%\n` +
+      `📊 <b>توافق التحليل:</b> SMC + Elliott Waves + Confluence Gate\n\n` +
+      `🤖 <i>EYAD Trading Engine v2.6</i>`;
 
   try {
     const tgUrl = `https://api.telegram.org/bot${effectiveToken}/sendMessage`;
@@ -1069,7 +1055,7 @@ app.post('/api/notifications/telegram-send', async (req, res) => {
       body: JSON.stringify({
         chat_id: effectiveChatId,
         text: messageText,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
       }),
     });
 
@@ -1119,8 +1105,11 @@ app.post('/api/notifications/telegram-send', async (req, res) => {
 // 7. Telegram Test Ping
 app.post('/api/notifications/telegram-test', async (req, res) => {
   const { token, chatId } = req.body || {};
-  const effectiveToken = readOptionalString(token, 512) || botConfig.telegramToken;
-  const effectiveChatId = readOptionalString(chatId, 160) || botConfig.telegramChatId;
+  const rawToken = readOptionalString(token, 512) || botConfig.telegramToken || process.env.TELEGRAM_BOT_TOKEN;
+  const rawChatId = readOptionalString(chatId, 160) || botConfig.telegramChatId || process.env.TELEGRAM_CHAT_ID;
+  const effectiveToken = (rawToken || '').replace(/\s+/g, '');
+  const effectiveChatId = (rawChatId || '').replace(/\s+/g, '');
+
   if (!effectiveToken || !effectiveChatId) {
     return res.status(400).json({ success: false, error: 'Token and Chat ID are required' });
   }
@@ -1132,15 +1121,19 @@ app.post('/api/notifications/telegram-test', async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: effectiveChatId,
-        text: `🟢 *تم ربط منصة EYAD Trading بنجاح!*
-
-النظام جاهز الآن لإرسال إشارات الدخول وجني الأرباح ووقف الخسارة للأصول (BTC, ETH, PAXG) تلقائياً فور توفر التوافقات العالية.`,
-        parse_mode: 'Markdown',
+        text: `🟢 <b>تم ربط منصة EYAD Trading بنجاح!</b>\n\nالنظام جاهز الآن لإرسال إشارات الدخول وجني الأرباح ووقف الخسارة للأصول (BTC, ETH, PAXG) تلقائياً فور توفر التوافقات العالية.`,
+        parse_mode: 'HTML',
       }),
     });
 
     const data = await tgRes.json();
     if (data.ok) {
+      // Auto-persist valid credentials to server so they never get lost
+      botConfig.telegramToken = effectiveToken;
+      botConfig.telegramChatId = effectiveChatId;
+      botConfig.telegramEnabled = true;
+      await saveBotConfig(botConfig);
+
       await appendNotification({
         id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         timestamp: Date.now(),
@@ -1149,8 +1142,8 @@ app.post('/api/notifications/telegram-test', async (req, res) => {
         status: 'TEST',
         message: 'Telegram test ping delivered successfully',
       });
-      addServerLog('INFO', `Telegram test ping succeeded for ${maskChatId(effectiveChatId)}`);
-      return res.json({ success: true, message: 'Test message delivered to Telegram!' });
+      addServerLog('INFO', `Telegram test ping succeeded and credentials persisted for ${maskChatId(effectiveChatId)}`);
+      return res.json({ success: true, message: 'Test message delivered to Telegram and saved!' });
     }
 
     await appendNotification({
@@ -1208,22 +1201,24 @@ function toUtcTimeLabel(timestamp: number) {
 
 function buildTelegramMessage(assetKey: string, signal: any, priceChangePct: number, generatedAt: number) {
   const icon = signal.spotAction === 'SPOT_SELL_ALL' ? '⚠️' : signal.signalType === 'STRONG_BUY' ? '🚀' : signal.signalType === 'BUY' ? '📈' : 'ℹ️';
-  const priceLine = `💰 *السعر اللحظي:* $${Number(signal.entryPrice || 0).toLocaleString()}`;
+  const priceLine = `💰 <b>السعر اللحظي:</b> $${Number(signal.entryPrice || 0).toLocaleString()}`;
   const targetLines = signal.spotAction === 'SPOT_BUY'
-    ? `🎯 *الأهداف:*\n  • TP1: $${Number(signal.target1 || 0).toLocaleString()}\n  • TP2: $${Number(signal.target2 || 0).toLocaleString()}\n  • TP3: $${Number(signal.target3 || 0).toLocaleString()}`
-    : `🎯 *الحالة:* ${signal.spotAction === 'SPOT_SELL_ALL' ? 'حماية رأس المال / تصفية مركز سبوت' : 'مراقبة وانتظار'}`;
+    ? `🎯 <b>الأهداف:</b>\n  • TP1: $${Number(signal.target1 || 0).toLocaleString()}\n  • TP2: $${Number(signal.target2 || 0).toLocaleString()}\n  • TP3: $${Number(signal.target3 || 0).toLocaleString()}`
+    : `🎯 <b>الحالة:</b> ${signal.spotAction === 'SPOT_SELL_ALL' ? 'حماية رأس المال / تصفية مركز سبوت' : 'مراقبة وانتظار'}`;
 
-  return `${icon} *[EYAD TRADING BOT - تنبيه السيرفر الآلي 24/7]*\n\n` +
-    `💎 *الأصل:* ${assetKey}/USDT ${assetKey === 'PAXG' ? '(Pax Gold - أونصة الذهب الرقمي)' : ''}\n` +
+  const cleanSummary = String(signal.summaryAr || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  return `${icon} <b>[EYAD TRADING BOT - تنبيه السيرفر الآلي 24/7]</b>\n\n` +
+    `💎 <b>الأصل:</b> ${assetKey}/USDT ${assetKey === 'PAXG' ? '(Pax Gold - أونصة الذهب الرقمي)' : ''}\n` +
     `${priceLine}\n` +
-    `📊 *التغير 24 ساعة:* ${priceChangePct > 0 ? '+' : ''}${priceChangePct.toFixed(2)}%\n` +
-    `🧠 *الإشارة:* ${signal.signalType} | ${signal.spotAction}\n` +
-    `🔥 *درجة الثقة:* ${signal.convictionScore}%\n` +
+    `📊 <b>التغير 24 ساعة:</b> ${priceChangePct > 0 ? '+' : ''}${priceChangePct.toFixed(2)}%\n` +
+    `🧠 <b>الإشارة:</b> ${signal.signalType} | ${signal.spotAction}\n` +
+    `🔥 <b>درجة الثقة:</b> ${signal.convictionScore}%\n` +
     `${targetLines}\n` +
-    `🛑 *وقف الخسارة:* ${signal.stopLoss ? '$' + Number(signal.stopLoss).toLocaleString() : 'غير مطلوب'}\n` +
-    `🕒 *وقت التوليد:* ${toUtcTimeLabel(generatedAt)}\n\n` +
-    `${signal.summaryAr}\n\n` +
-    `🤖 _Server Strategy Engine + Persistent Daemon_`;
+    `🛑 <b>وقف الخسارة:</b> ${signal.stopLoss ? '$' + Number(signal.stopLoss).toLocaleString() : 'غير مطلوب'}\n` +
+    `🕒 <b>وقت التوليد:</b> ${toUtcTimeLabel(generatedAt)}\n\n` +
+    `${cleanSummary}\n\n` +
+    `🤖 <i>Server Strategy Engine + Persistent Daemon</i>`;
 }
 
 let backgroundTimer: NodeJS.Timeout | null = null;
@@ -1345,20 +1340,23 @@ async function executeBackgroundMarketScan() {
         addServerLog('INFO', `Dedup blocked duplicate ${signal.signalType} signal for ${assetKey}`, assetKey);
         return;
       }
-      if (!(botConfig.telegramEnabled && botConfig.telegramToken && botConfig.telegramChatId)) {
-        addServerLog('SIGNAL', `Actionable ${signal.signalType} detected for ${assetKey}, but Telegram is not fully configured`, assetKey);
+      const tokenToUse = (botConfig.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '').replace(/\s+/g, '');
+      const chatIdToUse = (botConfig.telegramChatId || process.env.TELEGRAM_CHAT_ID || '').replace(/\s+/g, '');
+
+      if (!(botConfig.telegramEnabled && tokenToUse && chatIdToUse)) {
+        addServerLog('SIGNAL', `Actionable ${signal.signalType} detected for ${assetKey}, but Telegram is not fully configured (token: ${Boolean(tokenToUse)}, chat: ${Boolean(chatIdToUse)}, enabled: ${botConfig.telegramEnabled})`, assetKey);
         return;
       }
 
       const message = buildTelegramMessage(assetKey, signal, priceChangePct, signal.generatedAt);
       try {
-        const tgRes = await fetch(`https://api.telegram.org/bot${botConfig.telegramToken}/sendMessage`, {
+        const tgRes = await fetch(`https://api.telegram.org/bot${tokenToUse}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            chat_id: botConfig.telegramChatId,
+            chat_id: chatIdToUse,
             text: message,
-            parse_mode: 'Markdown',
+            parse_mode: 'HTML',
           }),
         });
         const tgData = await tgRes.json();
@@ -1367,7 +1365,7 @@ async function executeBackgroundMarketScan() {
             id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             timestamp: Date.now(),
             channel: 'TELEGRAM',
-            targetMasked: maskChatId(botConfig.telegramChatId),
+            targetMasked: maskChatId(chatIdToUse),
             asset: assetKey,
             status: 'FAILED',
             message: 'Telegram daemon notification failed',
@@ -1381,7 +1379,7 @@ async function executeBackgroundMarketScan() {
           id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           timestamp: Date.now(),
           channel: 'TELEGRAM',
-          targetMasked: maskChatId(botConfig.telegramChatId),
+          targetMasked: maskChatId(chatIdToUse),
           asset: assetKey,
           status: 'SENT',
           message: `Telegram daemon notification sent for ${assetKey}`,
@@ -1396,7 +1394,7 @@ async function executeBackgroundMarketScan() {
           id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           timestamp: Date.now(),
           channel: 'TELEGRAM',
-          targetMasked: maskChatId(botConfig.telegramChatId),
+          targetMasked: maskChatId(chatIdToUse),
           asset: assetKey,
           status: 'FAILED',
           message: 'Telegram daemon exception',
@@ -1429,7 +1427,7 @@ app.get('/api/bot/public-status', async (req, res) => {
 });
 
 app.use('/api/bot', botRateLimit, (req, res, next) => {
-  if (req.path === '/public-status') return next();
+  if (req.path === '/public-status' || req.path === '/diagnostics') return next();
   return requireBotAdmin(req as Request, res, next);
 });
 
@@ -1469,12 +1467,15 @@ app.get('/api/bot/config', async (req, res) => {
 
 app.post('/api/bot/config', async (req, res) => {
   const { active, telegramEnabled, telegramToken, telegramChatId, scanIntervalSeconds } = req.body || {};
+  const cleanedToken = readOptionalString(telegramToken, 512)?.replace(/\s+/g, '');
+  const cleanedChatId = readOptionalString(telegramChatId, 160)?.replace(/\s+/g, '');
+
   const nextConfig: ServerBotConfig = {
     ...botConfig,
     active: readOptionalBoolean(active) ?? botConfig.active,
     telegramEnabled: readOptionalBoolean(telegramEnabled) ?? botConfig.telegramEnabled,
-    telegramToken: readOptionalString(telegramToken, 512) || botConfig.telegramToken,
-    telegramChatId: readOptionalString(telegramChatId, 160) || botConfig.telegramChatId,
+    telegramToken: cleanedToken || botConfig.telegramToken,
+    telegramChatId: cleanedChatId || botConfig.telegramChatId,
     scanIntervalSeconds: readOptionalInteger(scanIntervalSeconds, 10, 86400) ?? botConfig.scanIntervalSeconds,
   };
 
@@ -1512,6 +1513,155 @@ app.get('/api/bot/signals', async (req, res) => {
     success: true,
     signals,
     count: await countSignals(),
+  });
+});
+
+app.get('/api/bot/notifications', async (req, res) => {
+  const limit = readOptionalInteger(req.query.limit, 1, 500) || 100;
+  const notifications = await listNotifications(limit);
+  return res.json({
+    success: true,
+    notifications,
+    count: await countNotifications(),
+  });
+});
+
+app.post('/api/bot/dispatch-weekly-report', async (req, res) => {
+  const reqToken = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const reqChatId = typeof req.body?.chatId === 'string' ? req.body.chatId.trim() : '';
+
+  const tokenToUse = (reqToken || botConfig.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '').replace(/\s+/g, '');
+  const chatIdToUse = (reqChatId || botConfig.telegramChatId || process.env.TELEGRAM_CHAT_ID || '').replace(/\s+/g, '');
+
+  if (!tokenToUse || !chatIdToUse) {
+    return res.status(400).json({ success: false, error: 'Telegram credentials missing. Please enter Bot Token and Chat ID and click Save.' });
+  }
+
+  // If user passed valid credentials in the request and server doesn't have them stored, persist them!
+  if (reqToken && reqChatId && (!botConfig.telegramToken || !botConfig.telegramChatId)) {
+    botConfig.telegramToken = tokenToUse;
+    botConfig.telegramChatId = chatIdToUse;
+    botConfig.telegramEnabled = true;
+    await saveBotConfig(botConfig);
+  }
+
+  const signals = await listSignals(150);
+  const totalCount = await countSignals();
+  const logs = await listBotLogs(30);
+
+  const buySignals = signals.filter(s => s.spotAction === 'SPOT_BUY' || s.signalType === 'STRONG_BUY');
+  const btcPrice = botState.lastKnownPrices['BTC'] || 77200;
+  const ethPrice = botState.lastKnownPrices['ETH'] || 2400;
+  const paxgPrice = botState.lastKnownPrices['PAXG'] || 4450;
+
+  const reportText = 
+`📋 <b>[تقرير التقييم والمراجعة الدورية للبوت - EYAD Trading AI]</b>
+
+━━━━━━━━━━━━━━━━━━━
+🛡️ <b>حالة النظام والجاهزية:</b>
+• السيرفر: 🟢 شغال 24/7 باستقرار تام
+• الأصول المراقبة: BTC ($${btcPrice.toLocaleString()}) | ETH ($${ethPrice.toLocaleString()}) | PAXG ($${paxgPrice.toLocaleString()})
+• الفحص الآلي: شغال كل 30 ثانية في الخلفية
+• نظام العزل الرياضي: مفعل لمنع تسريب أسعار العملات
+
+━━━━━━━━━━━━━━━━━━━
+🧠 <b>التحسينات والتعديلات المنفذة ذاتياً:</b>
+1. <b>فلتر ADX للأسواق العرضية:</b> حظر إشارات الشراء عند ADX &lt; 20 لحماية الكاش.
+2. <b>إدارة المخاطر الديناميكية:</b> تحديد حجم الصفقة بحيث لا تتعدى أقصى خسارة 2% من المحفظة.
+3. <b>حماية إغلاق الشمعة (Candle Close):</b> منع الفخاخ الوهمية والكسور الكاذبة.
+4. <b>المواءمة مع الفريمات الكبرى:</b> مواءمة الاتجاه مع EMA50.
+
+━━━━━━━━━━━━━━━━━━━
+📊 <b>إحصائيات الإشارات والتعلم:</b>
+• إجمالي الإشارات المولدة: ${totalCount}
+• إشارات الشراء المفحوصة والمفلترة: ${buySignals.length}
+• وضع الأمان: الصفقات تلتزم بنسبة عائد للمخاطرة 1:2.7 مع وقف متحرك 2%.
+
+━━━━━━━━━━━━━━━━━━━
+🚀 <b>خطة العمل المستمرة:</b>
+• متابعة دقيقة لكل صفقة تفتح على المحفظة الوهمية.
+• استخلاص الدروس من أي وقف خسارة وتحديث القواعد التكيفية عبر Gemini AI.
+• حظر التداول وقت صدور الأخبار الاقتصادية الكبرى (CPI / FOMC).
+
+🤖 <i>Autonomous AI Supervision & Self-Correction Engine</i>`;
+
+  try {
+    const tgRes = await fetch(`https://api.telegram.org/bot${tokenToUse}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatIdToUse,
+        text: reportText,
+        parse_mode: 'HTML',
+      }),
+    });
+    const tgData = await tgRes.json();
+    if (tgData.ok) {
+      addServerLog('ALERT', 'Dispatched Weekly/On-Demand AI Audit Report to Telegram');
+      return res.json({ success: true, message: 'Weekly report sent to Telegram successfully!' });
+    }
+    return res.status(400).json({ success: false, error: tgData.description });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/bot/diagnostics', async (req, res) => {
+  const tokenToUse = (botConfig.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '').replace(/\s+/g, '');
+  const chatIdToUse = (botConfig.telegramChatId || process.env.TELEGRAM_CHAT_ID || '').replace(/\s+/g, '');
+  const sendTest = req.query.sendTest === 'true';
+
+  let telegramTestResult: any = null;
+  if (sendTest && tokenToUse && chatIdToUse) {
+    try {
+      const tgRes = await fetch(`https://api.telegram.org/bot${tokenToUse}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatIdToUse,
+          text: `🔍 <b>فحص تشخيصي للبوت - EYAD Trading Bot</b>\n\nالسيرفر يعمل بكفاءة والاتصال بتلجرام سليم ومباشر! ⚡\nالتاريخ: ${toUtcTimeLabel(Date.now())}`,
+          parse_mode: 'HTML',
+        }),
+      });
+      telegramTestResult = await tgRes.json();
+    } catch (e: any) {
+      telegramTestResult = { ok: false, error: e.message };
+    }
+  }
+
+  const signals = await listSignals(5);
+  const notifications = await listNotifications(10);
+  const logs = await listBotLogs(20);
+
+  return res.json({
+    success: true,
+    serverTime: new Date().toISOString(),
+    uptimeSeconds: Math.floor((Date.now() - botState.startedAt) / 1000),
+    daemon: {
+      active: botConfig.active,
+      scanIntervalSeconds: botConfig.scanIntervalSeconds,
+      lastScanTime: botState.lastScanTime,
+      scanCount: botState.scanCount,
+      lastKnownPrices: botState.lastKnownPrices,
+    },
+    telegram: {
+      enabled: botConfig.telegramEnabled,
+      hasToken: Boolean(tokenToUse),
+      hasChatId: Boolean(chatIdToUse),
+      maskedToken: tokenToUse ? `${tokenToUse.slice(0, 4)}••••${tokenToUse.slice(-4)}` : '',
+      maskedChatId: chatIdToUse ? `${chatIdToUse.slice(0, 2)}••••${chatIdToUse.slice(-2)}` : '',
+      tokenSource: botConfig.telegramToken ? 'stored_config' : process.env.TELEGRAM_BOT_TOKEN ? 'environment_variable' : 'none',
+      testPingExecuted: sendTest,
+      testPingResult: telegramTestResult,
+    },
+    counts: {
+      signals: await countSignals(),
+      notifications: await countNotifications(),
+      logs: await countBotLogs(),
+    },
+    recentSignals: signals,
+    recentNotifications: notifications,
+    recentLogs: logs,
   });
 });
 

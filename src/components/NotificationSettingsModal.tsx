@@ -93,7 +93,19 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
       });
       const data = await res.json();
       if (data.success) {
-        setTestResult({ success: true, message: lang === 'ar' ? 'تم إرسال رسالة الاختبار إلى تلجرام بنجاح.' : 'Telegram test message sent successfully.' });
+        setTestResult({ success: true, message: lang === 'ar' ? 'تم إرسال رسالة الاختبار وحفظ بيانات تلجرام بنجاح! 🟢' : 'Telegram test message sent and credentials saved!' });
+        if (config.telegramToken.trim() && config.telegramChatId.trim()) {
+          const t = config.telegramToken.trim();
+          const c = config.telegramChatId.trim();
+          setConfig((prev) => ({
+            ...prev,
+            telegramEnabled: true,
+            serverHasTelegramToken: true,
+            serverHasTelegramChatId: true,
+            maskedTelegramToken: `${t.slice(0, 4)}••••${t.slice(-4)}`,
+            maskedTelegramChatId: `${c.slice(0, 2)}••••${c.slice(-2)}`,
+          }));
+        }
       } else {
         setTestResult({ success: false, message: data.error || (lang === 'ar' ? 'فشل الاتصال بتلجرام.' : 'Telegram connection failed.') });
       }
@@ -104,7 +116,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const payload: Record<string, unknown> = {
       active: true,
       telegramEnabled: config.telegramEnabled,
@@ -113,11 +125,28 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
     if (config.telegramToken.trim()) payload.telegramToken = config.telegramToken.trim();
     if (config.telegramChatId.trim()) payload.telegramChatId = config.telegramChatId.trim();
 
-    fetch('/api/bot/config', {
-      method: 'POST',
-      headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload),
-    }).catch(() => {});
+    try {
+      const res = await fetch('/api/bot/config', {
+        method: 'POST',
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success && data.config) {
+        setConfig((prev) => ({
+          ...prev,
+          telegramEnabled: data.config.telegramEnabled,
+          serverHasTelegramToken: Boolean(data.config.hasTelegramToken || prev.telegramToken),
+          serverHasTelegramChatId: Boolean(data.config.hasTelegramChatId || prev.telegramChatId),
+          maskedTelegramToken: data.config.maskedTelegramToken || prev.maskedTelegramToken,
+          maskedTelegramChatId: data.config.maskedTelegramChatId || prev.maskedTelegramChatId,
+          telegramToken: prev.telegramToken || (payload.telegramToken as string) || '',
+          telegramChatId: prev.telegramChatId || (payload.telegramChatId as string) || '',
+        }));
+      }
+    } catch (e) {
+      console.warn('Failed to save config to server:', e);
+    }
     onClose();
   };
 
@@ -179,6 +208,55 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
               {config.serverHasTelegramChatId && config.maskedTelegramChatId && <div className="mt-1 text-[10px] text-emerald-400">{lang === 'ar' ? `Chat ID محفوظ على السيرفر: ${config.maskedTelegramChatId}` : `Server chat ID on file: ${config.maskedTelegramChatId}`}</div>}
             </div>
             <button onClick={handleTestTelegram} disabled={testingTelegram} className="mt-1 w-full py-1.5 rounded bg-[#141414] hover:bg-[#1a1a1a] text-gray-200 border border-[#333] font-bold text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"><Send className="w-3 h-3 text-blue-400" /><span>{testingTelegram ? (lang === 'ar' ? 'جاري الاختبار...' : 'Testing...') : (lang === 'ar' ? 'اختبار إرسال رسالة لتلجرام' : 'Send Test Ping to Telegram')}</span></button>
+            <button 
+              onClick={async () => {
+                const tokenToSend = config.telegramToken.trim();
+                const chatIdToSend = config.telegramChatId.trim();
+                const canUseServerConfig = Boolean(config.serverHasTelegramToken && config.serverHasTelegramChatId);
+
+                if (!canUseServerConfig && (!tokenToSend || !chatIdToSend)) {
+                  setTestResult({ success: false, message: lang === 'ar' ? 'أدخلي Bot Token و Chat ID أولاً واضغطي حفظ' : 'Enter Bot Token and Chat ID first and click Save.' });
+                  return;
+                }
+
+                setTestingTelegram(true);
+                setTestResult(null);
+                try {
+                  const res = await fetch('/api/bot/dispatch-weekly-report', {
+                    method: 'POST',
+                    headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                      token: tokenToSend,
+                      chatId: chatIdToSend,
+                    }),
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    setTestResult({ success: true, message: lang === 'ar' ? 'تم إرسال تقرير المراجعة والتقييم الشامل إلى تلجرام بنجاح! 📋' : 'Weekly audit report sent to Telegram!' });
+                    if (tokenToSend && chatIdToSend) {
+                      setConfig((prev) => ({
+                        ...prev,
+                        telegramEnabled: true,
+                        serverHasTelegramToken: true,
+                        serverHasTelegramChatId: true,
+                        maskedTelegramToken: `${tokenToSend.slice(0, 4)}••••${tokenToSend.slice(-4)}`,
+                        maskedTelegramChatId: `${chatIdToSend.slice(0, 2)}••••${chatIdToSend.slice(-2)}`,
+                      }));
+                    }
+                  } else {
+                    setTestResult({ success: false, message: data.error || 'Failed to dispatch report' });
+                  }
+                } catch (e: any) {
+                  setTestResult({ success: false, message: e.message });
+                } finally {
+                  setTestingTelegram(false);
+                }
+              }}
+              disabled={testingTelegram}
+              className="mt-1 w-full py-1.5 rounded bg-purple-950/40 hover:bg-purple-900/50 text-purple-200 border border-purple-500/30 font-bold text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              <span>📋 {lang === 'ar' ? 'إرسال تقرير التقييم والمراجعة الدورية إلى تلجرام فوراً' : 'Send AI Audit Report to Telegram Now'}</span>
+            </button>
           </div>
         </div>
 
