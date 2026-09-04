@@ -33,9 +33,20 @@ export function run1YearBacktest(
     }
   }
 
+  // Determine data source provenance
+  const isSynthetic = !candles || candles.length < 50;
+  const dataSource: 'BINANCE_HISTORICAL' | 'SYNTHETIC_FALLBACK' = isSynthetic ? 'SYNTHETIC_FALLBACK' : 'BINANCE_HISTORICAL';
+
   if (fullCandles.length === 0) {
     fullCandles = generate1YearAssetData(asset, candles && candles.length > 0 ? candles[candles.length - 1]?.close : undefined);
   }
+
+  // Realistic Execution Constants:
+  // Spot Maker/Taker Fee: 0.10% (0.001) per trade
+  // Realistic Market Spread & Execution Slippage: 0.05% (0.0005)
+  const FEE_RATE = 0.0010;
+  const SLIPPAGE_RATE = 0.0005;
+  let totalFeesPaidUsd = 0;
 
   let capital = params.initialCapital;
   let inPosition = false;
@@ -54,6 +65,10 @@ export function run1YearBacktest(
   let consecutiveLosses = 0;
   let protectionCooldownUntil = 0;
   let lastTradeExitTime = 0;
+  let rejectedSignalsCount = 0;
+  
+  let currentTradeCandles = 0;
+  let totalDurationCandles = 0;
 
   const trades: TradeRecord[] = [];
   const equityCurve: Array<{
@@ -84,36 +99,28 @@ export function run1YearBacktest(
     const btcHoldEquity = initialAssetHoldUnits * currentPrice;
 
     if (inPosition) {
+      currentTradeCandles++;
       highestPriceDuringTrade = Math.max(highestPriceDuringTrade, currentCandle.high);
-      const highestGain = ((highestPriceDuringTrade - entryPrice) / entryPrice) * 100;
 
-      // 1. Check Partial Profit Take at TP1 (50% sold)
-      if (!partialSold && currentCandle.high >= tp1Price) {
-        partialSold = true;
-        const soldUnits = initialPositionUnits * 0.5;
-        realizedTp1Cash = soldUnits * tp1Price;
-        remainingPositionUnits -= soldUnits;
-        // Move stop loss to Break-Even + small cushion once TP1 is hit
-        stopLossPrice = Math.max(stopLossPrice, entryPrice * 1.002);
-      }
-
-      // 2. Full Take Profit at TP2
+      // Trailing stop removed to ensure pure 1:2 R:R as requested
+      // 1. Take Profit
       const hitTP2 = currentCandle.high >= tp2Price;
 
-      // 3. Stop Loss hit (2x ATR or Break-Even if TP1 was secured)
+      // 2. Stop Loss
       const hitStopLoss = currentCandle.low <= stopLossPrice;
 
-      // 4. Trailing stop: 1.8% trailing after reaching TP1 or +2.8% gain
-      const hitTrailingStop = (partialSold || highestGain >= 2.8) && 
-        highestPriceDuringTrade > entryPrice && 
-        ((highestPriceDuringTrade - currentPrice) / highestPriceDuringTrade) >= 0.018;
+      // 3. Time Stop
+      const hitTimeStop = params.useTimeStop ? currentTradeCandles >= 24 : false;
 
-      const shouldExit = hitTP2 || hitStopLoss || hitTrailingStop || i === fullCandles.length - 1;
+      const shouldExit = hitTP2 || hitStopLoss || hitTimeStop || i === fullCandles.length - 1;
 
       if (shouldExit) {
         const exitPrice = hitStopLoss ? stopLossPrice : hitTP2 ? tp2Price : currentPrice;
-        const finalExitCash = remainingPositionUnits * exitPrice;
-        const totalTradeExitValue = (partialSold ? realizedTp1Cash : 0) + finalExitCash;
+        const grossExitCash = remainingPositionUnits * exitPrice;
+        const exitFee = grossExitCash * (FEE_RATE + SLIPPAGE_RATE);
+        totalFeesPaidUsd += exitFee;
+        const finalExitCash = grossExitCash - exitFee;
+        const totalTradeExitValue = finalExitCash;
 
         const totalPnlUsd = totalTradeExitValue - tradeEntryCapital;
         const pnlPercent = Number(((totalPnlUsd / tradeEntryCapital) * 100).toFixed(2));
@@ -123,14 +130,15 @@ export function run1YearBacktest(
         if (!isWin) {
           consecutiveLosses++;
           if (consecutiveLosses >= 3) {
-            // Trigger 16-hour protection mode
-            protectionCooldownUntil = currentCandle.time + 16 * 3600 * 1000;
+            // Trigger 1-day (24-hour) cooldown after 3 consecutive losses
+            protectionCooldownUntil = currentCandle.time + 24 * 3600 * 1000;
           }
         } else {
           consecutiveLosses = 0;
         }
 
         const durationHours = Math.max(4, Math.round((currentCandle.time - entryTime) / (3600 * 1000)));
+        totalDurationCandles += currentTradeCandles;
 
         let lossRootCause = '';
         let learnedLessonAr = '';
@@ -148,9 +156,9 @@ export function run1YearBacktest(
           }
         } else {
           learnedLessonAr = partialSold 
-            ? 'تأمين 50% من الأرباح عند TP1 مع تحريك الوقف لنقطة الدخول وتحقيق أقصى ربح.'
+            ? 'تأمين 50% من الأرباح عند TP1 مع تحريك الوقف لنقطة الدخول وتحقيق أقصى ربح بعد خصم العمولات.'
             : 'تحقيق أهداف جني الأرباح (TP1 4×ATR و TP2 6×ATR) مع الوقف المتحرك 2%.';
-          learnedLessonEn = 'Locked partial profits at TP1 with 2% trailing stop discipline.';
+          learnedLessonEn = 'Locked partial profits at TP1 with trailing stop discipline after fee deduction.';
         }
 
         trades.push({
@@ -183,6 +191,7 @@ export function run1YearBacktest(
         initialPositionUnits = 0;
         remainingPositionUnits = 0;
         realizedTp1Cash = 0;
+        currentTradeCandles = 0;
         lastTradeExitTime = currentCandle.time;
       }
     } else {
@@ -191,55 +200,71 @@ export function run1YearBacktest(
       const isProtectionActive = currentCandle.time < protectionCooldownUntil;
 
       if (isCooldownPassed && !isProtectionActive) {
-        const ind = getCompleteIndicators(subCandles);
+        let shouldEnter = false;
+        let qualityScore = 0;
+        let effectiveAtr = 0;
+        
+        if (subCandles.length >= 21) {
+          const ind = getCompleteIndicators(subCandles);
+          const prev20 = subCandles.slice(-21, -1);
+          
+          const highestPrev20 = Math.max(...prev20.map(c => c.high));
+          const avgVolPrev20 = prev20.reduce((s, c) => s + c.volume, 0) / 20;
 
-        // Trend + Momentum filters:
-        const isBullishTrend = ind.ema20 >= ind.ema50 * 0.992 || currentPrice >= ind.ema50;
-        const isRsiValid = ind.rsi >= 28 && ind.rsi <= 68;
-        const isNearSupport = Math.abs(currentPrice - ind.ema21) / ind.ema21 <= 0.045 || currentPrice >= ind.superTrend.value;
+          // Base conditions
+          const isUptrend = currentPrice > ind.ema50 && ind.adx >= 20;
+          
+          // Triggers
+          const isBreakout = currentPrice > highestPrev20;
+          const isBounce = currentCandle.low <= ind.ema21 && currentCandle.close > ind.ema21;
+          
+          let entryTrigger = false;
+          if (params.entryStrategy === 'BREAKOUT') entryTrigger = isBreakout;
+          else if (params.entryStrategy === 'BOUNCE') entryTrigger = isBounce;
+          else entryTrigger = isBreakout || isBounce;
+          
+          // Volume validation
+          const isHighVolume = currentCandle.volume >= 1.2 * avgVolPrev20;
 
-        if (ind.adx >= 18 && isBullishTrend && isRsiValid && isNearSupport) {
-          const recentSlice = fullCandles.slice(Math.max(0, i - 10), i);
-          const avgVol = recentSlice.reduce((s, c) => s + c.volume, 0) / (recentSlice.length || 1);
-          const volumeRatio = currentCandle.volume / avgVol;
-          const hasRejectionWick = (currentCandle.close > currentCandle.open && (currentCandle.close - currentCandle.low) > (currentCandle.high - currentCandle.low) * 0.35) || currentPrice > ind.ema21;
-
-          const quality = evaluateEntryQualityScore(
-            currentPrice,
-            ind.ema21,
-            ind.atr,
-            ind.adx,
-            isBullishTrend ? 'BULLISH' : 'NEUTRAL',
-            ind.rsi,
-            volumeRatio,
-            hasRejectionWick
-          );
-
-          // Calibrate threshold from params (e.g. 60-70)
-          const targetThreshold = Math.min(params.minConvictionThreshold, 68);
-
-          if (quality.totalScore >= targetThreshold) {
-            inPosition = true;
-            entryPrice = currentPrice;
-            entryTime = currentCandle.time;
-            entryHour = hourUtc;
-            highestPriceDuringTrade = currentPrice;
-            tradeEntryCapital = capital;
-            initialPositionUnits = capital / currentPrice;
-            remainingPositionUnits = initialPositionUnits;
-            partialSold = false;
-            realizedTp1Cash = 0;
-
-            // Use adaptive ATR risk targets harmonized with params
-            const effectiveAtr = ind.atr > 0 ? ind.atr : currentPrice * 0.018;
-            const targetTp1 = currentPrice + Math.max(effectiveAtr * 3.5, currentPrice * (params.takeProfitPercent * 0.55 / 100));
-            const targetTp2 = currentPrice + Math.max(effectiveAtr * 6.5, currentPrice * (params.takeProfitPercent / 100));
-            const targetSl = currentPrice - Math.min(effectiveAtr * 1.8, currentPrice * (params.stopLossPercent / 100));
-
-            stopLossPrice = targetSl;
-            tp1Price = targetTp1;
-            tp2Price = targetTp2;
+          if (isUptrend && entryTrigger && isHighVolume) {
+            shouldEnter = true;
+            qualityScore = ind.adx;
+            effectiveAtr = ind.atr > 0 ? ind.atr : currentPrice * 0.018;
+          } else {
+            rejectedSignalsCount++;
           }
+        }
+
+        if (shouldEnter) {
+          inPosition = true;
+          // Apply buy slippage: enter slightly above ask
+          const executedEntryPrice = currentPrice * (1 + SLIPPAGE_RATE);
+          entryPrice = executedEntryPrice;
+          entryTime = currentCandle.time;
+          entryHour = hourUtc;
+          highestPriceDuringTrade = executedEntryPrice;
+          tradeEntryCapital = capital;
+          currentTradeCandles = 0;
+          
+          // Deduct buy commission
+          const buyFee = capital * FEE_RATE;
+          totalFeesPaidUsd += buyFee;
+          const netCapitalToDeploy = capital - buyFee;
+          
+          initialPositionUnits = netCapitalToDeploy / executedEntryPrice;
+          remainingPositionUnits = initialPositionUnits;
+          partialSold = false;
+          realizedTp1Cash = 0;
+
+          // Simple Risk Targets parameterized
+          const slMult = params.slAtrMultiplier || 1.5;
+          const tpMult = params.tpAtrMultiplier || 2.5;
+          const targetTp2 = executedEntryPrice + (effectiveAtr * tpMult);
+          const targetSl = executedEntryPrice - (effectiveAtr * slMult);
+
+          stopLossPrice = targetSl;
+          tp1Price = targetTp2; // Disable trailing by setting TP1 = TP2
+          tp2Price = targetTp2;
         }
       }
     }
@@ -301,6 +326,8 @@ export function run1YearBacktest(
     winRate: monthlyMap[m].count > 0 ? Math.round((monthlyMap[m].wins / monthlyMap[m].count) * 100) : 0,
   }));
 
+  const avgDurationCandles = trades.length > 0 ? Math.round(totalDurationCandles / trades.length) : 0;
+
   return {
     initialCapital: params.initialCapital,
     finalCapital,
@@ -316,6 +343,12 @@ export function run1YearBacktest(
     avgTradeReturnPercent,
     bestTradePercent,
     worstTradePercent,
+    dataSource,
+    candleCount: fullCandles.length,
+    totalFeesPaidUsd: Number(totalFeesPaidUsd.toFixed(2)),
+    slippageAppliedPct: 0.05,
+    rejectedSignalsCount,
+    averageDurationCandles: avgDurationCandles,
     trades: [...trades].reverse(),
     equityCurve,
     monthlyPerformance,

@@ -14,7 +14,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Sparkles,
-  Calendar
+  Calendar,
+  Database,
+  Coins
 } from 'lucide-react';
 import { BacktestParams, BacktestResult, Candle, SupportedAsset } from '../types';
 import { run1YearBacktest } from '../utils/backtestingEngine';
@@ -51,8 +53,43 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
 
   const [isRunning, setIsRunning] = useState(false);
   const [activeView, setActiveView] = useState<'curve' | 'monthly' | 'trades'>('curve');
-
   const [presetMode, setPresetMode] = useState<'high_growth' | 'balanced' | 'conservative'>('high_growth');
+  const [historicalFetchStatus, setHistoricalFetchStatus] = useState<'IDLE' | 'FETCHING_BINANCE' | 'SUCCESS_BINANCE' | 'FALLBACK'>('IDLE');
+
+  const executeBacktestWithHistoricalData = async (targetParams: BacktestParams) => {
+    setIsRunning(true);
+    setHistoricalFetchStatus('FETCHING_BINANCE');
+    const targetAsset: SupportedAsset = (currentAsset as SupportedAsset) || 'BTC';
+
+    let backtestCandles: Candle[] = candles;
+
+    try {
+      // Attempt to pull real Binance historical klines directly from backend proxy
+      const res = await fetch(`/api/market/historical?asset=${targetAsset}&interval=4h&limit=1000`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.candles && Array.isArray(data.candles) && data.candles.length >= 100) {
+          backtestCandles = data.candles;
+          setHistoricalFetchStatus('SUCCESS_BINANCE');
+        } else {
+          setHistoricalFetchStatus('FALLBACK');
+        }
+      } else {
+        setHistoricalFetchStatus('FALLBACK');
+      }
+    } catch (e) {
+      setHistoricalFetchStatus('FALLBACK');
+    }
+
+    // Run backtest with realistic 0.10% fees and 0.05% slippage applied
+    const result = run1YearBacktest(backtestCandles, targetParams, targetAsset);
+    setBacktestResult(result);
+    setIsRunning(false);
+
+    try {
+      confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });
+    } catch (e) {}
+  };
 
   const applyPreset = (mode: 'high_growth' | 'balanced' | 'conservative') => {
     setPresetMode(mode);
@@ -89,34 +126,18 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
       };
     }
     setParams(newParams);
-    setIsRunning(true);
-    setTimeout(() => {
-      const targetAsset: SupportedAsset = (currentAsset as SupportedAsset) || 'BTC';
-      const result = run1YearBacktest(candles, newParams, targetAsset);
-      setBacktestResult(result);
-      setIsRunning(false);
-      try {
-        confetti({ particleCount: 80, spread: 80, origin: { y: 0.6 } });
-      } catch (e) {}
-    }, 400);
+    executeBacktestWithHistoricalData(newParams);
   };
 
   const handleRunBacktest = () => {
-    setIsRunning(true);
-    setTimeout(() => {
-      const targetAsset: SupportedAsset = (currentAsset as SupportedAsset) || 'BTC';
-      const result = run1YearBacktest(candles, params, targetAsset);
-      setBacktestResult(result);
-      setIsRunning(false);
-      try {
-        confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });
-      } catch (e) {}
-    }, 400);
+    executeBacktestWithHistoricalData(params);
   };
 
   const handleAutoOptimize = () => {
     applyPreset('high_growth');
   };
+
+  const isBinanceSource = backtestResult.dataSource === 'BINANCE_HISTORICAL';
 
   return (
     <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded p-4 space-y-4 font-mono">
@@ -124,26 +145,48 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
       {/* Top Banner: Title + Quick Run & Auto-Optimize buttons */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[#1f1f1f]">
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap mb-2">
             <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-blue-400" />
-              <span>{lang === 'ar' ? 'محاكي الباك تيست لسنة كاملة (1-Year Backtest Engine)' : '1-Year Historical Backtest Simulator'}</span>
+              <span>{lang === 'ar' ? 'محاكي الباك تيست التاريخي' : 'Historical Backtest Engine'}</span>
             </h2>
             <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
               {currentAsset}/USDT
             </span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#141414] text-gray-400 border border-[#222]">
-              365 Days
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#141414] text-gray-300 border border-[#222]">
+              {backtestResult.candleCount ? `${backtestResult.candleCount} Klines (4H)` : '1000 Klines'}
             </span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-950/40 text-blue-300 border border-blue-500/30">
-              {lang === 'ar' ? 'ℹ️ محاكاة إحصائية خوارزمية (Algorithmic Modeling)' : 'ℹ️ Algorithmic Statistical Model'}
+
+            {/* Provenance Badge */}
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+              isBinanceSource
+                ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40'
+                : 'bg-amber-950/60 text-amber-300 border border-amber-500/40'
+            }`}>
+              <Database className="w-3 h-3" />
+              <span>
+                {isBinanceSource 
+                  ? 'LIVE BINANCE'
+                  : 'FALLBACK SYNTHETIC'
+                }
+              </span>
+            </span>
+
+            {/* Fees Badge */}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-purple-950/40 text-purple-300 border border-purple-500/30">
+              <Coins className="w-3 h-3" />
+              <span>{lang === 'ar' ? 'خصم 0.10% عمولة + 0.05% سبريد' : '0.10% Fee + 0.05% Spread'}</span>
             </span>
           </div>
-          <p className="text-[11px] text-gray-400 mt-1 font-sans">
-            {lang === 'ar'
-              ? `اختبار الإستراتيجية على عملة (${currentAsset}/USDT) مع دمج SMC وموجات إليوت وحماية رأس المال`
-              : `365-day backtest simulation on (${currentAsset}/USDT) combining SMC, Elliott Waves, and capital protection`}
-          </p>
+
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-950/30 border border-red-500/30 rounded text-red-300 text-xs font-semibold">
+            <AlertTriangle className="w-4 h-4" />
+            <span>
+              {lang === 'ar' 
+                ? 'تحذير بحثي: الاستراتيجية لم تتفوق على (Buy & Hold) في العينات المختبرة بعد خصم العمولات.' 
+                : 'Research Note: Strategy did not outperform Buy & Hold in tested samples after fees.'}
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
@@ -264,7 +307,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <span className="font-bold text-white flex items-center gap-1.5">
             <Sliders className="w-3.5 h-3.5 text-blue-400" />
-            {lang === 'ar' ? 'أنماط التداول الجاهزة (Strategy Presets):' : 'Strategy Presets & Profiles:'}
+            {lang === 'ar' ? 'أنماط المخاطرة:' : 'Risk Profiles:'}
           </span>
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
@@ -275,7 +318,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
                   : 'bg-[#151515] text-gray-400 hover:text-white border border-[#2a2a2a]'
               }`}
             >
-              🚀 {lang === 'ar' ? 'النمو العالي والأداء الذكي (+35%)' : 'High Growth (+35%)'}
+              {lang === 'ar' ? 'مخاطرة عالية' : 'High Risk'}
             </button>
             <button
               onClick={() => applyPreset('balanced')}
@@ -285,7 +328,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
                   : 'bg-[#151515] text-gray-400 hover:text-white border border-[#2a2a2a]'
               }`}
             >
-              ⚖️ {lang === 'ar' ? 'المتوازن المؤسسي (Win Rate 72%)' : 'Institutional Balanced'}
+              {lang === 'ar' ? 'مخاطرة متوسطة' : 'Balanced Risk'}
             </button>
             <button
               onClick={() => applyPreset('conservative')}
@@ -295,7 +338,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
                   : 'bg-[#151515] text-gray-400 hover:text-white border border-[#2a2a2a]'
               }`}
             >
-              🛡️ {lang === 'ar' ? 'الدرع الواقي (أقصى حماية)' : 'Max Protection'}
+              {lang === 'ar' ? 'مخاطرة منخفضة' : 'Low Risk'}
             </button>
           </div>
         </div>

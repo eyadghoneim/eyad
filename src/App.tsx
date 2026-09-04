@@ -547,16 +547,16 @@ export function App() {
 
     const summaries: Record<SupportedAsset, { ar: string; en: string }> = {
       PAXG: {
-        ar: `إشارة شراء سبوت للذهب الرقمي (PAXG/USDT): ارتداد إيجابي من منطقة الطلب المؤسسية مع تدفق السيولة نحو الملاذات الآمنة والتحوط ضد التضخم الكلي. الالتزام بوقف الخسارة الصارم عند 2×ATR ($${Math.round(defaultPrice - 2 * atr).toLocaleString()}) وأهداف جني الأرباح TP1 $${Math.round(defaultPrice + 4 * atr).toLocaleString()} و TP2 $${Math.round(defaultPrice + 6 * atr).toLocaleString()} مع تفعيل الوقف المتحرك 2%.`,
-        en: `Spot Buy Signal for Pax Gold (PAXG/USDT): Decisive bounce off institutional Demand Zone driven by safe-haven macro liquidity flows. Strict 2x ATR stop loss ($${Math.round(defaultPrice - 2 * atr).toLocaleString()}) and 4x/6x ATR profit targets active with 2% trailing protection.`,
+        ar: `تحليل ورقي للذهب الرقمي (PAXG/USDT): ارتداد إيجابي من منطقة الطلب المؤسسية مع تدفق السيولة نحو الملاذات الآمنة والتحوط ضد التضخم الكلي. جميع البيانات والشروحات هي لمحاكاة الأبحاث فقط (Paper Trading).`,
+        en: `Paper analysis for Pax Gold (PAXG/USDT): Bounce off institutional Demand Zone driven by safe-haven macro liquidity flows. All data and analysis are for research and simulation purposes only.`,
       },
       ETH: {
-        ar: `إشارة شراء سبوت للإيثريوم (ETH/USDT): تأكيد إعادة اختبار دعم EMA21 وزخم تصاعدي لمؤشر MACD مع تدفقات سيولة التمويل اللامركزي DeFi. وقف الخسارة عند 2×ATR ($${Math.round(defaultPrice - 2 * atr).toLocaleString()}) وجني الأرباح الجزئي عند TP1 $${Math.round(defaultPrice + 4 * atr).toLocaleString()}.`,
-        en: `Spot Buy Signal for Ethereum (ETH/USDT): EMA21 retest confirmed with bullish MACD momentum and DeFi liquidity inflows. 2x ATR SL ($${Math.round(defaultPrice - 2 * atr).toLocaleString()}) and partial TP1 active.`,
+        ar: `تحليل ورقي للإيثريوم (ETH/USDT): إعادة اختبار دعم EMA21 وزخم تصاعدي لمؤشر MACD مع تدفقات سيولة التمويل اللامركزي DeFi. الشرح التحليلي (SMC/Elliott) هو للمحاكاة والقياس التاريخي وليس إشارة تداول حية.`,
+        en: `Paper analysis for Ethereum (ETH/USDT): EMA21 retest confirmed with bullish MACD momentum and DeFi liquidity inflows. SMC/Elliott explanations are for analytical simulation, not live execution signals.`,
       },
       BTC: {
-        ar: `إشارة شراء سبوت للبتكوين (BTC/USDT): توافق مثالي مع استراتيجية EYAD BTC وقواعد الدخول الصارمة (درجة الجودة 85/100). السعر يرتد من دعم EMA21 مع تأكيد الحجم ومؤشر ADX الصاعد. وقف الخسارة الصارم عند 2×ATR ($${Math.round(defaultPrice - 2 * atr).toLocaleString()}) والهدف الأول TP1 عند 4×ATR ($${Math.round(defaultPrice + 4 * atr).toLocaleString()}).`,
-        en: `Spot Buy Signal for Bitcoin (BTC/USDT): Full compliance with EYAD BTC strategy and strict Entry Quality Gate (Score 85/100). Price retests EMA21 with volume confirmation and ADX > 20. Strict 2x ATR SL and 4x ATR TP1 active.`,
+        ar: `تحليل ورقي للبتكوين (BTC/USDT): السعر يختبر دعم EMA21 مع حجم التداول ومؤشر ADX الصاعد. يرجى ملاحظة أن الاستراتيجية لم تتفوق على الاحتفاظ (Buy & Hold) في الاختبارات التاريخية، ويجب اعتبارها دراسة تحليلية (محاكاة) وليست إشارة دخول.`,
+        en: `Paper analysis for Bitcoin (BTC/USDT): Price retests EMA21 with volume confirmation and ADX > 20. Note that the strategy has historically underperformed Buy & Hold. This is purely an analytical simulation, not a live execution signal.`,
       },
     };
 
@@ -747,14 +747,13 @@ export function App() {
       { id: '8', name: '24h Asset Trade Cooldown', status: 'ACTIVE', triggered: false, details: '1 trade/day discipline' },
     ],
     confluenceFactors: [
-      'توافق مثالي مع بوابة جودة الدخول بدرجة 85/100 (تجاوز حد 75 نقطة)',
-      'ارتداد إيجابي وتأكيد رفض من مستوى EMA21 على الفريم الزمني 4 ساعات',
-      'مؤشر الاتجاه ADX عند 28.4 متجاوزاً عتبة 20 لمنع الأسواق العرضية',
-      'تحديد أهداف وقف الخسارة عند 2×ATR وأهداف جني الأرباح 4×ATR و 6×ATR',
-      'تفعيل نظام الوقف المتحرك 2% بعد تحقيق الهدف الأول TP1 لحماية الأرباح'
+      'توافق مع بوابة المحاكاة بدرجة 85/100',
+      'ارتداد من مستوى EMA21 للمتابعة التحليلية',
+      'مؤشر الاتجاه ADX عند 28.4',
+      'أهداف نظرية للمحاكاة: جني الأرباح 4×ATR و 6×ATR'
     ],
-    summaryAr: 'إشارة شراء سبوت متطابقة بالكامل مع استراتيجية EYAD BTC وقواعد الدخول الصارمة (درجة الجودة 85/100). السعر يرتد من دعم EMA21 مع تأكيد الحجم ومؤشر ADX الصاعد. وقف الخسارة الصارم عند 2×ATR والهدف الأول TP1 عند 4×ATR (بيع 50% جزئياً).',
-    summaryEn: 'Spot Buy signal compliant with EYAD BTC Strategy and strict Entry Quality Gate (Score 85/100). Price retests EMA21 with volume confirmation and ADX > 20. Strict 2x ATR SL and 4x ATR TP1 (50% partial exit) active.',
+    summaryAr: 'تحليل ورقي: السعر يختبر دعم EMA21 مع حجم التداول ومؤشر ADX الصاعد. هذه محاكاة تحليلية فقط ولا تعد إشارة تداول.',
+    summaryEn: 'Paper Analysis: Price retests EMA21 with volume confirmation and ADX > 20. This is an analytical simulation only, not a trading signal.',
     timestamp: new Date().toISOString(),
     liquidityRegime: null,
   });

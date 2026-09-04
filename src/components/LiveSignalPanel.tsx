@@ -90,40 +90,31 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-col">
             <div className="text-[10px] uppercase text-gray-500 font-mono font-bold mb-0.5">
-              {lang === 'ar' ? `حالة الإشارة الفنية (${currentAsset})` : `${currentAsset} Signal State`}
+              {lang === 'ar' ? `حالة التحليل (${currentAsset})` : `${currentAsset} Analysis State`}
             </div>
             <div className="flex items-baseline space-x-2 space-x-reverse">
               <div
-                className={`text-2xl sm:text-3xl font-mono font-bold tracking-tight ${
-                  isBuy
-                    ? 'text-emerald-400'
-                    : isSell
-                    ? 'text-rose-400'
-                    : 'text-amber-400'
-                }`}
+                className={`text-2xl sm:text-3xl font-mono font-bold tracking-tight text-gray-300`}
               >
                 {signalType === 'STRONG_BUY'
-                  ? 'STRONG BUY'
+                  ? 'BULLISH (PAPER)'
                   : signalType === 'BUY'
-                  ? 'BUY'
+                  ? 'LEAN BULLISH'
                   : signalType === 'SELL'
-                  ? 'SELL'
+                  ? 'LEAN BEARISH'
                   : signalType === 'STRONG_SELL'
-                  ? 'STRONG SELL'
-                  : 'HOLD'}
-              </div>
-              <div className="text-xs text-gray-400 font-mono">
-                {lang === 'ar' ? `ثقة الإشارة: ${conviction}%` : `Confidence: ${conviction}%`}
+                  ? 'BEARISH (PAPER)'
+                  : 'NEUTRAL'}
               </div>
             </div>
           </div>
 
           {/* Strategy Protection Label */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#141414] text-gray-300 border border-[#222] text-[11px] font-mono">
-            <Zap className="w-3 h-3 text-amber-400" />
-            <span className="text-amber-400 font-semibold">{lang === 'ar' ? 'متعدد الأصول' : 'Multi-Asset'}</span>
+            <Zap className="w-3 h-3 text-gray-400" />
+            <span className="text-gray-400 font-semibold">{lang === 'ar' ? 'نموذج تحليلي' : 'Analytical Model'}</span>
             <span className="text-gray-500">•</span>
-            <span>{lang === 'ar' ? 'حماية رأس المال' : 'Capital Preserved'}</span>
+            <span className="text-gray-400">{lang === 'ar' ? 'غير تنفيذي' : 'Non-Executional'}</span>
           </div>
 
           {/* Entry Quality Gate Status Badge */}

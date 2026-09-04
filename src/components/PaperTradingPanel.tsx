@@ -215,17 +215,16 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-sm text-white">
-                {lang === 'ar' ? 'المحفظة التجريبية الآلية (Auto Paper Trading)' : 'Automated Paper Trading Portfolio'}
+                {lang === 'ar' ? 'المحفظة التجريبية (Paper Trading)' : 'Paper Trading Simulator'}
               </h2>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Auto-Pilot Active
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                Simulation Only
               </span>
             </div>
             <p className="text-xs text-gray-400 font-sans">
               {lang === 'ar' 
-                ? 'تنفيذ آلي وتلقائي لإشارات الشراء والبيع وجني الأرباح ووقف الخسارة برأس مال افتراضي $10,000' 
-                : 'Automated execution of bot signals, profit targets (TP1/TP2), and SL on $10,000 virtual balance'}
+                ? 'محاكاة لتنفيذ افتراضي برأس مال $10,000 (بدون ضمانات أداء)' 
+                : 'Virtual simulation with $10,000 capital (No performance guarantees)'}
             </p>
           </div>
         </div>

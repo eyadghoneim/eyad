@@ -80,10 +80,22 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-base sm:text-lg font-bold tracking-tight text-white font-mono flex items-center gap-1.5">
                   EYAD Trading
                 </span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-950/40 text-emerald-400 border border-emerald-500/30">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  LIVE
-                </span>
+                {marketSource.includes('Binance') ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-500/40">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    LIVE BINANCE DATA
+                  </span>
+                ) : marketSource.includes('Coinbase') || marketSource.includes('CoinGecko') ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-blue-950/50 text-blue-400 border border-blue-500/40">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                    SPOT PRICE PROXY
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-950/50 text-amber-400 border border-amber-500/40">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    FALLBACK SYNTHETIC
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-gray-400 font-mono" dir="ltr">
                 <span className="text-gray-400">{marketSource}</span>

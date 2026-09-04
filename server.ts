@@ -281,6 +281,59 @@ app.get('/api/market/btc-live', async (req, res) => {
   });
 });
 
+// 2.4 Real Historical Market Data Endpoint (Fetches up to 1000 Binance historical Klines for Backtesting)
+app.get('/api/market/historical', async (req, res) => {
+  const asset = ((req.query.asset as string) || 'BTC').toUpperCase();
+  const interval = (req.query.interval as string) || '4h';
+  const limit = Math.min(1000, Math.max(50, parseInt(req.query.limit as string) || 1000));
+
+  const symbolMap: Record<string, string> = {
+    BTC: 'BTCUSDT',
+    ETH: 'ETHUSDT',
+    PAXG: 'PAXGUSDT',
+  };
+
+  const symbol = symbolMap[asset] || 'BTCUSDT';
+
+  try {
+    const klinesRes = await fetch(
+      `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
+      { headers: { 'User-Agent': 'eyad-trading-bot-backtest' } }
+    );
+
+    if (klinesRes.ok) {
+      const rawKlines = await klinesRes.json();
+      const candles = rawKlines.map((k: any) => ({
+        time: k[0],
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4]),
+        volume: parseFloat(k[5]),
+      }));
+
+      return res.json({
+        success: true,
+        source: 'BINANCE_HISTORICAL',
+        asset,
+        symbol,
+        interval,
+        count: candles.length,
+        candles,
+        timestamp: Date.now(),
+      });
+    }
+  } catch (err: any) {
+    // Fallback to error response so backtest knows historical data failed
+  }
+
+  return res.status(502).json({
+    success: false,
+    error: 'Failed to fetch authentic Binance historical candles',
+    source: 'ERROR',
+  });
+});
+
 // 2.5 Multi-Asset Real-Time Tickers Endpoint
 app.get('/api/market/all-assets', async (req, res) => {
   const assets = ['BTC', 'ETH', 'PAXG'];

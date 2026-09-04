@@ -111,7 +111,7 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
         {/* TAB 1: Smart Money Concepts (SMC) */}
         {activeTab === 'smc' && (
           <div className="space-y-4 font-mono">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               
               {/* Market Structure */}
               <div className="bg-[#0c0c0c] p-3.5 rounded border border-[#222]">
@@ -121,7 +121,7 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
                   {smc.marketStructure}
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1.5 font-sans">
-                  {lang === 'ar' ? 'كسر قمم سابقة وتثبيت اتجاه صاعد قوي (BOS / CHoCH)' : 'Structural breakout confirming trend continuation'}
+                  {lang === 'ar' ? 'مبني على كسر قمم/قيعان ATR حقيقية' : 'Verified via ATR-filtered swing breaks'}
                 </p>
               </div>
 
@@ -132,7 +132,18 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
                   {smc.premiumDiscountZone}
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1.5 font-sans">
-                  {lang === 'ar' ? 'السعر في منطقة خصم (Discount) ملائمة لتجميع السبوت' : 'Favorable institutional accumulation zone'}
+                  {lang === 'ar' ? 'السعر مقارنة بالنطاق المؤسسي العام' : 'Position relative to institutional range'}
+                </p>
+              </div>
+
+              {/* Volume Delta Proxy */}
+              <div className="bg-[#0c0c0c] p-3.5 rounded border border-[#222]">
+                <div className="text-[10px] text-gray-500 uppercase font-bold mb-1">{lang === 'ar' ? 'مؤشر دلتا الفوليوم' : 'Volume Delta Proxy'}</div>
+                <div className={`text-sm font-bold ${(smc.volumeDeltaProxy || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {(smc.volumeDeltaProxy || 0) > 0 ? `+${smc.volumeDeltaProxy}%` : `${smc.volumeDeltaProxy || 0}%`}
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1.5 font-sans">
+                  {lang === 'ar' ? 'توازن حجم الشراء مقابل البيع للشمعات الأخيرة' : 'Directional bar-volume imbalance proxy'}
                 </p>
               </div>
 
@@ -143,7 +154,7 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
                   {smc.liquiditySwept.lowSwept ? (lang === 'ar' ? 'تم سحب سيولة القاع' : 'Low Swept & Reclaimed') : (lang === 'ar' ? 'لا يوجد سحب معاكس' : 'Clean Orderbook')}
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1.5 font-sans">
-                  {lang === 'ar' ? 'تم اصطياد وتصفية العقود الضعيفة وتطهير القاع' : 'Weak hands flushed, clean path for spot expansion'}
+                  {lang === 'ar' ? 'تصفية العقود الضعيفة وتطهير القاع' : 'Weak hands flushed, clean path'}
                 </p>
               </div>
 
@@ -151,9 +162,14 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
 
             {/* Active Order Blocks & Fair Value Gaps List */}
             <div className="bg-[#080808] p-3 rounded border border-[#1f1f1f]">
-              <div className="text-xs font-bold text-white mb-2.5 flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-blue-400" />
-                <span>{lang === 'ar' ? 'المناطق المؤسسية المرصودة (Order Blocks & Fair Value Gaps)' : 'Detected Institutional Zones'}</span>
+              <div className="text-xs font-bold text-white mb-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-blue-400" />
+                  <span>{lang === 'ar' ? 'المناطق المؤسسية المرصودة (Order Blocks & Fair Value Gaps)' : 'Detected Institutional Zones'}</span>
+                </div>
+                <span className="text-[10px] text-gray-400">
+                  {smc.unmitigatedOBCount !== undefined ? `${smc.unmitigatedOBCount} Fresh / ${smc.mitigatedOBCount || 0} Mitigated` : ''}
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -162,7 +178,7 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
                     <div>
                       <div className="font-semibold text-gray-200">{lang === 'ar' ? z.descriptionAr : z.descriptionEn}</div>
                       <div className="text-gray-500 text-[10px] mt-0.5">
-                        {z.isMitigated ? (lang === 'ar' ? 'تم اختبارها جزئياً' : 'Mitigated') : (lang === 'ar' ? 'منطقة جديدة قوية غير ملموسة' : 'Fresh Unmitigated')}
+                        {z.isMitigated ? (lang === 'ar' ? 'تم اختباره واستهلاكه' : 'Mitigated / Weakened') : (lang === 'ar' ? 'بلوك نشط غير ملموس (Fresh)' : 'Fresh Unmitigated')}
                       </div>
                     </div>
                     <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
@@ -183,8 +199,11 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
           <div className="space-y-4 font-mono">
             <div className="bg-[#0c0c0c] p-4 rounded border border-[#222] flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
               <div>
-                <div className="text-[10px] text-yellow-400 font-semibold uppercase tracking-wider mb-1">
-                  {lang === 'ar' ? 'المرحلة الموجية الحالية' : 'Current Wave Phase'}
+                <div className="text-[10px] text-yellow-400 font-semibold uppercase tracking-wider mb-1 flex items-center gap-2">
+                  <span>{lang === 'ar' ? 'المرحلة الموجية الحالية' : 'Current Wave Phase'}</span>
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-950/60 text-blue-300 border border-blue-500/30">
+                    Confidence: {elliott.confidence}%
+                  </span>
                 </div>
                 <div className="text-lg sm:text-xl font-bold text-white">
                   {elliott.currentWave} ({elliott.waveType})
@@ -200,6 +219,30 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
                 <div className="text-[9px] text-gray-500 mt-0.5">{lang === 'ar' ? 'الهدف الموجي المتوقع' : 'Projected Impulse Peak'}</div>
               </div>
             </div>
+
+            {/* Elliott Wave Rules Verification Status */}
+            {(elliott.rulesPassed || elliott.rulesViolated) && (
+              <div className="bg-[#080808] p-3 rounded border border-[#1f1f1f]">
+                <div className="text-xs font-bold text-white mb-2 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                  <span>{lang === 'ar' ? 'التحقق الرياضي لقواعد إليوت' : 'Mathematical Elliott Rules Verification'}</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {elliott.rulesPassed?.map((rule, idx) => (
+                    <div key={`pass-${idx}`} className="flex items-center gap-1.5 text-emerald-400 bg-emerald-950/20 px-2.5 py-1.5 rounded border border-emerald-500/20">
+                      <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{rule}</span>
+                    </div>
+                  ))}
+                  {elliott.rulesViolated?.map((rule, idx) => (
+                    <div key={`viol-${idx}`} className="flex items-center gap-1.5 text-amber-400 bg-amber-950/20 px-2.5 py-1.5 rounded border border-amber-500/20">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{rule}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Fibonacci Levels Matrix */}
             <div className="bg-[#080808] p-3 rounded border border-[#1f1f1f]">

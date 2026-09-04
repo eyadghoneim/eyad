@@ -72,6 +72,11 @@ export interface SMCAnalysis {
     lastSweepTime?: number;
   };
   premiumDiscountZone: 'DEEP_DISCOUNT' | 'DISCOUNT' | 'EQUILIBRIUM' | 'PREMIUM' | 'DEEP_PREMIUM';
+  volumeDeltaProxy?: number; // Approximate directional volume score (-100 to +100)
+  lastBOSPrice?: number;
+  lastCHoCHPrice?: number;
+  mitigatedOBCount?: number;
+  unmitigatedOBCount?: number;
   summaryAr: string;
   summaryEn: string;
 }
@@ -90,6 +95,10 @@ export interface ElliottWaveAnalysis {
     level1_618: number;
   };
   confidence: number;
+  rulesPassed?: string[];
+  rulesViolated?: string[];
+  impulseVolumeRatio?: number;
+  validatedSwingsCount?: number;
   explanationAr: string;
   explanationEn: string;
 }
@@ -299,6 +308,11 @@ export interface BacktestParams {
   useElliottWaveFilter: boolean;
   useSelfLearningFilter: boolean;
   minConvictionThreshold: number;
+  
+  slAtrMultiplier?: number;
+  tpAtrMultiplier?: number;
+  entryStrategy?: 'BREAKOUT' | 'BOUNCE' | 'BOTH';
+  useTimeStop?: boolean;
 }
 
 export interface BacktestResult {
@@ -316,6 +330,12 @@ export interface BacktestResult {
   avgTradeReturnPercent: number;
   bestTradePercent: number;
   worstTradePercent: number;
+  dataSource?: 'BINANCE_HISTORICAL' | 'SYNTHETIC_FALLBACK' | 'NOT_VALIDATED';
+  candleCount?: number;
+  totalFeesPaidUsd?: number;
+  slippageAppliedPct?: number;
+  rejectedSignalsCount?: number;
+  averageDurationCandles?: number;
   trades: TradeRecord[];
   equityCurve: Array<{
     timestamp: number;
