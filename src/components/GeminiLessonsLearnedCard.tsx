@@ -173,8 +173,8 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
         {
           id: 'lesson_risk_1',
           category: 'RISK_MANAGEMENT',
-          lessonAr: 'حجز 50% من الأرباح عند الهدف الأول (TP1) مع نقل وقف الخسارة إلى نقطة الدخول (Breakeven) هو العامل الفارق الذي يرفع نسبة الصفقات الخالية من المخاطر إلى 100%.',
-          lessonEn: 'Scaling out 50% at Take-Profit 1 and immediately moving Stop Loss to Breakeven is the decisive metric that makes trades 100% risk-free.',
+          lessonAr: 'حجز 50% من الأرباح عند الهدف الأول (TP1) مع نقل وقف الخسارة إلى نقطة الدخول (Breakeven) هو العامل الفارق في تأمين رأس المال وحماية المكاسب المحققة.',
+          lessonEn: 'Scaling out 50% at Take-Profit 1 and immediately moving Stop Loss to Breakeven is the decisive metric for securing principal and locking realized gains.',
           actionRuleAr: 'قاعدة تأمين الأرباح الآلي: إغلاق نصف الكمية فور تحقيق 2% ربح وتحريك الوقف لسعر الشراء تلقائياً.',
           actionRuleEn: 'Automatic Breakeven Rule: Liquidate 50% upon hitting +2% and trail stop to entry price instantly.',
           priority: 'CRITICAL',
