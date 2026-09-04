@@ -102,7 +102,9 @@ function createRateLimitMiddleware(scope: string, max: number, windowMs: number)
 function extractAdminToken(req: Request) {
   const headerToken = req.header('x-bot-admin-token') || '';
   const bearerToken = (req.header('authorization') || '').replace(/^Bearer\s+/i, '');
-  return (headerToken || bearerToken).trim();
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : (typeof req.query.admin_token === 'string' ? req.query.admin_token : '');
+  const bodyToken = typeof (req.body as any)?.token === 'string' ? (req.body as any).token : (typeof (req.body as any)?.admin_token === 'string' ? (req.body as any).admin_token : '');
+  return (headerToken || bearerToken || queryToken || bodyToken).trim();
 }
 
 function requireBotAdmin(req: Request, res: any, next: NextFunction) {
@@ -2482,7 +2484,7 @@ app.post('/api/notifications/telegram-digest', async (req, res) => {
   }
 });
 
-app.post('/api/bot/scan-now', async (req, res) => {
+app.all('/api/bot/scan-now', async (req, res) => {
   await executeBackgroundMarketScan();
   return res.json({ success: true, message: 'Background scan executed', at: Date.now() });
 });
