@@ -30,6 +30,7 @@ async function fetchJsonCached<T = any>(key: string, url: string, ttlMs: number)
       'User-Agent': 'eyad-trading-liquidity-proxy/1.0',
       'Accept': 'application/json',
     },
+    signal: AbortSignal.timeout(6000),
   });
 
   const text = await res.text();
@@ -62,6 +63,7 @@ async function fetchJsonCachedPost<T = any>(key: string, url: string, body: obje
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(6000),
     body: JSON.stringify(body),
   });
 

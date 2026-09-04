@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bell, Volume2, VolumeX, RefreshCw, TrendingUp, TrendingDown, Code2, Activity, Globe, Mic, Radio } from 'lucide-react';
-import { AlertConfig, SupportedAsset } from '../types';
+import { AlertConfig, SupportedAsset, ConfigChecksumReport } from '../types';
+import { ChecksumSyncBadge } from './ChecksumSyncBadge';
 
 interface HeaderProps {
   currentAsset: SupportedAsset;
@@ -20,6 +21,9 @@ interface HeaderProps {
   onOpenStrategyModal: () => void;
   onOpenVoiceModal: () => void;
   onRefreshData: () => void;
+  checksumReport?: ConfigChecksumReport | null;
+  isChecksumSyncing?: boolean;
+  onForceChecksumSync?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,6 +44,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStrategyModal,
   onOpenVoiceModal,
   onRefreshData,
+  checksumReport = null,
+  isChecksumSyncing = false,
+  onForceChecksumSync = () => {},
 }) => {
   const isPos = change24h >= 0;
 
@@ -112,6 +119,14 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Top Action Buttons */}
           <div className="flex items-center gap-2">
+            {/* Checksum Verification & Sync Pill */}
+            <ChecksumSyncBadge
+              report={checksumReport}
+              isSyncing={isChecksumSyncing}
+              onForceRecheck={onForceChecksumSync}
+              lang={lang}
+            />
+
             {/* Strategy Inspector Modal Trigger */}
             <button
               onClick={onOpenStrategyModal}

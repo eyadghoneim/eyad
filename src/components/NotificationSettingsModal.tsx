@@ -121,6 +121,11 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
       active: true,
       telegramEnabled: config.telegramEnabled,
       scanIntervalSeconds: config.autoScanIntervalSeconds,
+      telegramAlertTiers: config.telegramAlertTiers || {
+        urgentTrades: true,
+        positionUpdates: true,
+        dailyDigest: true,
+      },
     };
     if (config.telegramToken.trim()) payload.telegramToken = config.telegramToken.trim();
     if (config.telegramChatId.trim()) payload.telegramChatId = config.telegramChatId.trim();
@@ -142,12 +147,47 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
           maskedTelegramChatId: data.config.maskedTelegramChatId || prev.maskedTelegramChatId,
           telegramToken: prev.telegramToken || (payload.telegramToken as string) || '',
           telegramChatId: prev.telegramChatId || (payload.telegramChatId as string) || '',
+          telegramAlertTiers: data.config.telegramAlertTiers || prev.telegramAlertTiers,
         }));
       }
     } catch (e) {
       console.warn('Failed to save config to server:', e);
     }
     onClose();
+  };
+
+  const handleSendDailyDigest = async () => {
+    const tokenToSend = config.telegramToken.trim();
+    const chatIdToSend = config.telegramChatId.trim();
+    const canUseServerConfig = Boolean(config.serverHasTelegramToken && config.serverHasTelegramChatId);
+
+    if (!canUseServerConfig && (!tokenToSend || !chatIdToSend)) {
+      setTestResult({ success: false, message: lang === 'ar' ? 'أدخلي Bot Token و Chat ID أولاً واضغطي حفظ' : 'Enter Bot Token and Chat ID first and click Save.' });
+      return;
+    }
+
+    setTestingTelegram(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/notifications/telegram-digest', {
+        method: 'POST',
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          token: tokenToSend,
+          chatId: chatIdToSend,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTestResult({ success: true, message: lang === 'ar' ? 'تم إرسال التقرير اليومي الشامل (Daily Digest) إلى تلجرام بنجاح! 📊' : 'Daily Digest dispatched to Telegram!' });
+      } else {
+        setTestResult({ success: false, message: data.error || 'Failed to dispatch digest' });
+      }
+    } catch (e: any) {
+      setTestResult({ success: false, message: e.message });
+    } finally {
+      setTestingTelegram(false);
+    }
   };
 
   return (
@@ -208,55 +248,129 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
               {config.serverHasTelegramChatId && config.maskedTelegramChatId && <div className="mt-1 text-[10px] text-emerald-400">{lang === 'ar' ? `Chat ID محفوظ على السيرفر: ${config.maskedTelegramChatId}` : `Server chat ID on file: ${config.maskedTelegramChatId}`}</div>}
             </div>
             <button onClick={handleTestTelegram} disabled={testingTelegram} className="mt-1 w-full py-1.5 rounded bg-[#141414] hover:bg-[#1a1a1a] text-gray-200 border border-[#333] font-bold text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"><Send className="w-3 h-3 text-blue-400" /><span>{testingTelegram ? (lang === 'ar' ? 'جاري الاختبار...' : 'Testing...') : (lang === 'ar' ? 'اختبار إرسال رسالة لتلجرام' : 'Send Test Ping to Telegram')}</span></button>
-            <button 
-              onClick={async () => {
-                const tokenToSend = config.telegramToken.trim();
-                const chatIdToSend = config.telegramChatId.trim();
-                const canUseServerConfig = Boolean(config.serverHasTelegramToken && config.serverHasTelegramChatId);
 
-                if (!canUseServerConfig && (!tokenToSend || !chatIdToSend)) {
-                  setTestResult({ success: false, message: lang === 'ar' ? 'أدخلي Bot Token و Chat ID أولاً واضغطي حفظ' : 'Enter Bot Token and Chat ID first and click Save.' });
-                  return;
-                }
-
-                setTestingTelegram(true);
-                setTestResult(null);
-                try {
-                  const res = await fetch('/api/bot/dispatch-weekly-report', {
-                    method: 'POST',
-                    headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({
-                      token: tokenToSend,
-                      chatId: chatIdToSend,
-                    }),
-                  });
-                  const data = await res.json();
-                  if (data.success) {
-                    setTestResult({ success: true, message: lang === 'ar' ? 'تم إرسال تقرير المراجعة والتقييم الشامل إلى تلجرام بنجاح! 📋' : 'Weekly audit report sent to Telegram!' });
-                    if (tokenToSend && chatIdToSend) {
-                      setConfig((prev) => ({
-                        ...prev,
-                        telegramEnabled: true,
-                        serverHasTelegramToken: true,
-                        serverHasTelegramChatId: true,
-                        maskedTelegramToken: `${tokenToSend.slice(0, 4)}••••${tokenToSend.slice(-4)}`,
-                        maskedTelegramChatId: `${chatIdToSend.slice(0, 2)}••••${chatIdToSend.slice(-2)}`,
-                      }));
+            {/* Tiered Telegram Alert Channels */}
+            <div className="p-2.5 rounded bg-[#070707] border border-[#1e1e1e] space-y-2 mt-2">
+              <div className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
+                <span>{lang === 'ar' ? 'مستويات التنبيهات المفلترة (Tiered Alerts):' : 'Tiered Telegram Alert Filters:'}</span>
+                <span className="text-[10px] text-emerald-400 font-mono">Anti-Spam Active</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 text-[11px]">
+                <label className="flex items-center gap-1.5 cursor-pointer bg-[#0e0e0e] p-1.5 rounded border border-[#1c1c1c]">
+                  <input
+                    type="checkbox"
+                    checked={config.telegramAlertTiers?.urgentTrades !== false}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        telegramAlertTiers: {
+                          ...(config.telegramAlertTiers || { urgentTrades: true, positionUpdates: true, dailyDigest: true }),
+                          urgentTrades: e.target.checked,
+                        },
+                      })
                     }
-                  } else {
-                    setTestResult({ success: false, message: data.error || 'Failed to dispatch report' });
+                    className="accent-rose-500 rounded"
+                  />
+                  <span className="text-rose-300 font-semibold">{lang === 'ar' ? '🚨 صفقات فورية' : '🚨 Urgent'}</span>
+                </label>
+
+                <label className="flex items-center gap-1.5 cursor-pointer bg-[#0e0e0e] p-1.5 rounded border border-[#1c1c1c]">
+                  <input
+                    type="checkbox"
+                    checked={config.telegramAlertTiers?.positionUpdates !== false}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        telegramAlertTiers: {
+                          ...(config.telegramAlertTiers || { urgentTrades: true, positionUpdates: true, dailyDigest: true }),
+                          positionUpdates: e.target.checked,
+                        },
+                      })
+                    }
+                    className="accent-blue-500 rounded"
+                  />
+                  <span className="text-blue-300 font-semibold">{lang === 'ar' ? '📊 تحديثات TP/SL' : '📊 TP/SL Updates'}</span>
+                </label>
+
+                <label className="flex items-center gap-1.5 cursor-pointer bg-[#0e0e0e] p-1.5 rounded border border-[#1c1c1c]">
+                  <input
+                    type="checkbox"
+                    checked={config.telegramAlertTiers?.dailyDigest !== false}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        telegramAlertTiers: {
+                          ...(config.telegramAlertTiers || { urgentTrades: true, positionUpdates: true, dailyDigest: true }),
+                          dailyDigest: e.target.checked,
+                        },
+                      })
+                    }
+                    className="accent-purple-500 rounded"
+                  />
+                  <span className="text-purple-300 font-semibold">{lang === 'ar' ? '📈 تقرير يومي' : '📈 Daily Digest'}</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
+              <button
+                onClick={handleSendDailyDigest}
+                disabled={testingTelegram}
+                className="w-full py-1.5 rounded bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-200 border border-emerald-500/30 font-bold text-[11px] transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                <span>📊 {lang === 'ar' ? 'إرسال التقرير اليومي الشامل (Digest)' : 'Send Daily Digest Now'}</span>
+              </button>
+
+              <button 
+                onClick={async () => {
+                  const tokenToSend = config.telegramToken.trim();
+                  const chatIdToSend = config.telegramChatId.trim();
+                  const canUseServerConfig = Boolean(config.serverHasTelegramToken && config.serverHasTelegramChatId);
+
+                  if (!canUseServerConfig && (!tokenToSend || !chatIdToSend)) {
+                    setTestResult({ success: false, message: lang === 'ar' ? 'أدخلي Bot Token و Chat ID أولاً واضغطي حفظ' : 'Enter Bot Token and Chat ID first and click Save.' });
+                    return;
                   }
-                } catch (e: any) {
-                  setTestResult({ success: false, message: e.message });
-                } finally {
-                  setTestingTelegram(false);
-                }
-              }}
-              disabled={testingTelegram}
-              className="mt-1 w-full py-1.5 rounded bg-purple-950/40 hover:bg-purple-900/50 text-purple-200 border border-purple-500/30 font-bold text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
-            >
-              <span>📋 {lang === 'ar' ? 'إرسال تقرير التقييم والمراجعة الدورية إلى تلجرام فوراً' : 'Send AI Audit Report to Telegram Now'}</span>
-            </button>
+
+                  setTestingTelegram(true);
+                  setTestResult(null);
+                  try {
+                    const res = await fetch('/api/bot/dispatch-weekly-report', {
+                      method: 'POST',
+                      headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
+                      body: JSON.stringify({
+                        token: tokenToSend,
+                        chatId: chatIdToSend,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                      setTestResult({ success: true, message: lang === 'ar' ? 'تم إرسال تقرير المراجعة والتقييم الشامل إلى تلجرام بنجاح! 📋' : 'Weekly audit report sent to Telegram!' });
+                      if (tokenToSend && chatIdToSend) {
+                        setConfig((prev) => ({
+                          ...prev,
+                          telegramEnabled: true,
+                          serverHasTelegramToken: true,
+                          serverHasTelegramChatId: true,
+                          maskedTelegramToken: `${tokenToSend.slice(0, 4)}••••${tokenToSend.slice(-4)}`,
+                          maskedTelegramChatId: `${chatIdToSend.slice(0, 2)}••••${chatIdToSend.slice(-2)}`,
+                        }));
+                      }
+                    } else {
+                      setTestResult({ success: false, message: data.error || 'Failed to dispatch report' });
+                    }
+                  } catch (e: any) {
+                    setTestResult({ success: false, message: e.message });
+                  } finally {
+                    setTestingTelegram(false);
+                  }
+                }}
+                disabled={testingTelegram}
+                className="w-full py-1.5 rounded bg-purple-950/40 hover:bg-purple-900/50 text-purple-200 border border-purple-500/30 font-bold text-[11px] transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                <span>📋 {lang === 'ar' ? 'تقرير التقييم الأسبوعي' : 'Weekly AI Audit Report'}</span>
+              </button>
+            </div>
           </div>
         </div>
 

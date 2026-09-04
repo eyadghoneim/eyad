@@ -36,8 +36,15 @@ import {
   SMCAnalysis, 
   SupportedAsset,
   Timeframe, 
-  TradeRecord 
+  TradeRecord,
+  ConfigChecksumReport,
+  SyncableBotConfig
 } from './types';
+import { 
+  extractLocalSyncableConfig, 
+  computeConfigChecksum, 
+  detectConfigDiscrepancies 
+} from './utils/configChecksum';
 import { generate1YearAssetData } from './utils/mockHistoricalData';
 import { calculateAllIndicators } from './utils/technicalAnalysis';
 import { analyzeSMC } from './utils/smcAnalysis';
@@ -46,7 +53,8 @@ import { initialLearningState, updateLearningWithTrades } from './utils/learning
 import { run1YearBacktest } from './utils/backtestingEngine';
 import { evaluatePaperPositionsAuto, autoOpenPaperTradeOnSignal, AutoTradeExecutionResult } from './utils/paperTradingEngine';
 import { getBotAdminHeaders } from './utils/botAdminAuth';
-import { Activity, BarChart2, BrainCircuit, Sparkles, CheckCircle2, ShieldCheck, Code2, Wallet, Layers, Calendar, Flame, Columns, Radio } from 'lucide-react';
+import { QuantRiskDashboard } from './components/QuantRiskDashboard';
+import { Activity, BarChart2, BrainCircuit, Sparkles, CheckCircle2, ShieldCheck, Code2, Wallet, Layers, Calendar, Flame, Columns, Radio, Cpu } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 function applyLiquidityRegimeToSignal(signal: AIReasoning, regime: LiquidityRegimeData | null, lang: 'ar' | 'en'): AIReasoning {
@@ -93,9 +101,10 @@ function applyLiquidityRegimeToSignal(signal: AIReasoning, regime: LiquidityRegi
 export function App() {
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [currentAsset, setCurrentAsset] = useState<SupportedAsset>('BTC');
-  const [activeMainTab, setActiveMainTab] = useState<'live' | 'liquidity' | 'simulation' | 'intelligence'>('live');
-  const [simSubTab, setSimSubTab] = useState<'paper' | 'backtest'>('paper');
+  const [activeMainTab, setActiveMainTab] = useState<'live' | 'liquidity' | 'simulation' | 'intelligence' | 'quant'>('live');
+  const [simSubTab, setSimSubTab] = useState<'paper' | 'backtest' | 'quant'>('paper');
   const [intelSubTab, setIntelSubTab] = useState<'macro' | 'learning' | 'ops'>('macro');
+  const [currentDerivatives, setCurrentDerivatives] = useState<{ fundingRate: number; sentiment: string } | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>('1h');
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   
@@ -203,36 +212,201 @@ export function App() {
     }));
   }, [alertConfig]);
 
+  const [currentSpreadPct, setCurrentSpreadPct] = useState<number>(0.024);
+
+  // Auto-sync paperAccount with server-side database
   useEffect(() => {
     localStorage.setItem('eyad_paper_account', JSON.stringify(paperAccount));
+    const timer = setTimeout(() => {
+      fetch('/api/paper/account', {
+        method: 'POST',
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ account: paperAccount }),
+      }).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(timer);
   }, [paperAccount]);
 
+  // Track live order book spread for active asset
   useEffect(() => {
-    const hydrateServerBotConfig = async () => {
+    const fetchSpread = async () => {
       try {
-        const res = await fetch('/api/bot/config', { headers: getBotAdminHeaders() });
-        if (!res.ok) return;
-        const data = await res.json();
-        const cfg = data?.config;
-        if (!cfg) return;
+        const res = await fetch(`/api/market/depth?asset=${currentAsset}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.spreadPercent === 'number') {
+            setCurrentSpreadPct(data.spreadPercent);
+          }
+        }
+      } catch {}
+    };
+    fetchSpread();
+    const interval = setInterval(fetchSpread, 15000);
+    return () => clearInterval(interval);
+  }, [currentAsset]);
+
+  // Checksum Engine State
+  const [checksumReport, setChecksumReport] = useState<ConfigChecksumReport | null>(null);
+  const [isChecksumSyncing, setIsChecksumSyncing] = useState<boolean>(false);
+
+  // Verification & Sync function comparing localStorage with Backend Config
+  const verifyAndSyncConfigChecksum = useCallback(async (forceUpdateServer = false) => {
+    setIsChecksumSyncing(true);
+    try {
+      // 1. Hydrate paper account first if newer
+      try {
+        const paperRes = await fetch('/api/paper/account', { headers: getBotAdminHeaders() });
+        if (paperRes.ok) {
+          const pData = await paperRes.json();
+          if (pData?.account && (pData.account.tradeHistory?.length > 0 || pData.account.positions?.length > 0)) {
+            setPaperAccount((prev) => {
+              if ((pData.account.tradeHistory?.length || 0) >= (prev.tradeHistory?.length || 0)) {
+                return {
+                  ...prev,
+                  ...pData.account,
+                  trancheModeEnabled: pData.account.trancheModeEnabled ?? prev.trancheModeEnabled ?? true,
+                  spreadFilterEnabled: pData.account.spreadFilterEnabled ?? prev.spreadFilterEnabled ?? true,
+                  maxSpreadTolerancePct: pData.account.maxSpreadTolerancePct ?? prev.maxSpreadTolerancePct ?? 0.15,
+                };
+              }
+              return prev;
+            });
+          }
+        }
+      } catch {}
+
+      // 2. Extract snapshot from client LocalStorage
+      const localConfig = extractLocalSyncableConfig();
+      const localChecksum = await computeConfigChecksum(localConfig);
+
+      // 3. Fetch server configuration & checksum
+      const res = await fetch('/api/bot/checksum', { headers: getBotAdminHeaders() });
+      if (!res.ok) {
+        setChecksumReport({
+          localChecksum,
+          serverChecksum: 'OFFLINE',
+          isMatch: false,
+          syncedAt: Date.now(),
+          syncAction: 'ERROR',
+          differences: ['Backend server offline or unreachable'],
+          details: {
+            telegramConfigured: Boolean(localConfig.telegramToken && localConfig.telegramChatId),
+            scanIntervalSeconds: localConfig.scanIntervalSeconds,
+            spreadFilterEnabled: localConfig.spreadFilterEnabled,
+            maxSpreadPercent: localConfig.maxSpreadPercent,
+            trancheModeEnabled: localConfig.trancheModeEnabled,
+            tranche1Percent: localConfig.tranche1Percent,
+            tranche2Percent: localConfig.tranche2Percent,
+            adaptiveRulesCount: localConfig.adaptiveRulesCount || 0,
+            bannedHoursCount: localConfig.bannedTradingHours?.length || 0,
+            paperAutoExecute: localConfig.paperAutoExecute ?? true,
+          },
+        });
+        return;
+      }
+
+      const data = await res.json();
+      const serverChecksum = data.checksum || '';
+      const serverCanonical = data.canonicalConfig || {};
+      const serverSafe = data.config || {};
+
+      const diffs = detectConfigDiscrepancies(localConfig, { ...serverSafe, ...serverCanonical });
+      const hasDiscrepancy = diffs.length > 0 || forceUpdateServer;
+
+      if (!hasDiscrepancy && (localChecksum === serverChecksum || serverSafe.hasTelegramToken)) {
+        // Exact match confirmed
+        setChecksumReport({
+          localChecksum,
+          serverChecksum: serverChecksum || localChecksum,
+          isMatch: true,
+          syncedAt: Date.now(),
+          syncAction: 'IN_SYNC',
+          differences: [],
+          details: {
+            telegramConfigured: Boolean(serverSafe.hasTelegramToken || localConfig.telegramToken),
+            scanIntervalSeconds: serverCanonical.scanIntervalSeconds || localConfig.scanIntervalSeconds,
+            spreadFilterEnabled: serverCanonical.spreadFilterEnabled ?? localConfig.spreadFilterEnabled,
+            maxSpreadPercent: serverCanonical.maxSpreadPercent ?? localConfig.maxSpreadPercent,
+            trancheModeEnabled: serverCanonical.trancheModeEnabled ?? localConfig.trancheModeEnabled,
+            tranche1Percent: serverCanonical.tranche1Percent ?? localConfig.tranche1Percent,
+            tranche2Percent: serverCanonical.tranche2Percent ?? localConfig.tranche2Percent,
+            adaptiveRulesCount: localConfig.adaptiveRulesCount || 0,
+            bannedHoursCount: localConfig.bannedTradingHours?.length || 0,
+            paperAutoExecute: localConfig.paperAutoExecute ?? true,
+          },
+        });
+
+        // Hydrate local UI with server-masked tokens if available
         setAlertConfig((prev) => ({
           ...prev,
-          telegramEnabled: typeof cfg.telegramEnabled === 'boolean' ? cfg.telegramEnabled : prev.telegramEnabled,
-          autoScanIntervalSeconds: Number(cfg.scanIntervalSeconds) || prev.autoScanIntervalSeconds,
-          serverHasTelegramToken: Boolean(cfg.hasTelegramToken || prev.serverHasTelegramToken),
-          serverHasTelegramChatId: Boolean(cfg.hasTelegramChatId || prev.serverHasTelegramChatId),
-          maskedTelegramToken: cfg.maskedTelegramToken || prev.maskedTelegramToken,
-          maskedTelegramChatId: cfg.maskedTelegramChatId || prev.maskedTelegramChatId,
-          telegramToken: prev.telegramToken || '',
-          telegramChatId: prev.telegramChatId || '',
+          telegramEnabled: typeof serverSafe.telegramEnabled === 'boolean' ? serverSafe.telegramEnabled : prev.telegramEnabled,
+          autoScanIntervalSeconds: Number(serverSafe.scanIntervalSeconds) || prev.autoScanIntervalSeconds,
+          serverHasTelegramToken: Boolean(serverSafe.hasTelegramToken || prev.serverHasTelegramToken),
+          serverHasTelegramChatId: Boolean(serverSafe.hasTelegramChatId || prev.serverHasTelegramChatId),
+          maskedTelegramToken: serverSafe.maskedTelegramToken || prev.maskedTelegramToken,
+          maskedTelegramChatId: serverSafe.maskedTelegramChatId || prev.maskedTelegramChatId,
         }));
-      } catch (e) {
-        // silent background hydration failure
+        return;
       }
-    };
 
-    hydrateServerBotConfig();
+      // 4. Discrepancy detected: Immediately update backend server to match client settings
+      const syncRes = await fetch('/api/bot/sync-checksum', {
+        method: 'POST',
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          clientConfig: localConfig,
+          clientChecksum: localChecksum,
+        }),
+      });
+
+      if (syncRes.ok) {
+        const syncData = await syncRes.json();
+        const verifiedChecksum = syncData.checksum || localChecksum;
+        
+        setChecksumReport({
+          localChecksum: verifiedChecksum,
+          serverChecksum: verifiedChecksum,
+          isMatch: true,
+          syncedAt: Date.now(),
+          syncAction: 'SERVER_UPDATED',
+          differences: diffs,
+          details: {
+            telegramConfigured: Boolean(localConfig.telegramToken && localConfig.telegramChatId),
+            scanIntervalSeconds: localConfig.scanIntervalSeconds,
+            spreadFilterEnabled: localConfig.spreadFilterEnabled,
+            maxSpreadPercent: localConfig.maxSpreadPercent,
+            trancheModeEnabled: localConfig.trancheModeEnabled,
+            tranche1Percent: localConfig.tranche1Percent,
+            tranche2Percent: localConfig.tranche2Percent,
+            adaptiveRulesCount: localConfig.adaptiveRulesCount || 0,
+            bannedHoursCount: localConfig.bannedTradingHours?.length || 0,
+            paperAutoExecute: localConfig.paperAutoExecute ?? true,
+          },
+        });
+
+        if (syncData.config) {
+          setAlertConfig((prev) => ({
+            ...prev,
+            telegramEnabled: syncData.config.telegramEnabled ?? true,
+            serverHasTelegramToken: true,
+            serverHasTelegramChatId: true,
+            maskedTelegramToken: syncData.config.maskedTelegramToken || `${localConfig.telegramToken.slice(0, 4)}••••${localConfig.telegramToken.slice(-4)}`,
+            maskedTelegramChatId: syncData.config.maskedTelegramChatId || `${localConfig.telegramChatId.slice(0, 2)}••••${localConfig.telegramChatId.slice(-2)}`,
+            autoScanIntervalSeconds: syncData.config.scanIntervalSeconds || prev.autoScanIntervalSeconds,
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('verifyAndSyncConfigChecksum failure:', e);
+    } finally {
+      setIsChecksumSyncing(false);
+    }
   }, []);
+
+  // Run Checksum verification immediately upon application load
+  useEffect(() => {
+    verifyAndSyncConfigChecksum();
+  }, [verifyAndSyncConfigChecksum]);
 
   // Fetch Multi-Asset Tickers for Scanner Radar
   const fetchAllTickers = useCallback(async () => {
@@ -479,6 +653,26 @@ export function App() {
     return () => clearInterval(interval);
   }, [fetchMacroStatus, fetchLiquidityRegime, currentAsset]);
 
+  // Periodically fetch live derivatives data for Funding & Overheat Risk Guards
+  useEffect(() => {
+    let isMounted = true;
+    const fetchDeriv = async () => {
+      try {
+        const res = await fetch(`/api/market/derivatives?asset=${currentAsset}`);
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          setCurrentDerivatives({ fundingRate: data.fundingRate, sentiment: data.sentiment });
+        }
+      } catch {}
+    };
+    fetchDeriv();
+    const interval = setInterval(fetchDeriv, 30000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [currentAsset]);
+
   // Learning Engine State
   const [learningState, setLearningState] = useState<LearningState>(() => {
     const saved = localStorage.getItem('eyad_btc_learning_state');
@@ -660,24 +854,44 @@ export function App() {
       // 2. Automatically open new spot position on valid Buy signal if autoExecuteSignals is enabled
       if (nextAccount.autoExecuteSignals && aiSignal) {
         const activePrice = livePrices[currentAsset] || btcPrice;
-        const openResult = autoOpenPaperTradeOnSignal(nextAccount, currentAsset, activePrice, aiSignal, 25);
+        const openResult = autoOpenPaperTradeOnSignal(
+          nextAccount,
+          currentAsset,
+          activePrice,
+          aiSignal,
+          25,
+          currentSpreadPct,
+          currentDerivatives || undefined
+        );
         if (openResult.opened) {
           nextAccount = openResult.updatedAccount;
           if (openResult.event) {
             newEvents.unshift(openResult.event);
           }
           playAlertSound();
+        } else if (openResult.event) {
+          // Log spread delay event
+          newEvents.unshift(openResult.event);
         }
       }
 
       if (newEvents.length > 0) {
         setAutoEvents((prev) => [...newEvents, ...prev].slice(0, 40));
 
-        // Auto-send Telegram notification for major trading events
+        // Auto-send Telegram notification for major trading events respecting Alert Tiers
+        const alertTiers = alertConfig.telegramAlertTiers || { urgentTrades: true, positionUpdates: true, dailyDigest: true };
         if (alertConfig.telegramEnabled && alertConfig.telegramToken && alertConfig.telegramChatId) {
           newEvents.forEach((ev) => {
+            // Check tier permissions
+            const isUrgent = ev.type === 'ENTRY';
+            const isPositionUpdate = ev.type === 'TP1' || ev.type === 'TP2' || ev.type === 'STOP_LOSS' || ev.type === 'TRAILING_STOP' || ev.type === 'SELL_SIGNAL';
+            
+            if (isUrgent && alertTiers.urgentTrades === false) return;
+            if (isPositionUpdate && alertTiers.positionUpdates === false) return;
+
             const icon = (ev.type === 'TP1' || ev.type === 'TP2') ? '🎯' : (ev.type === 'STOP_LOSS' || ev.type === 'TRAILING_STOP') ? '🛑' : ev.type === 'ENTRY' ? '🚀' : '⚡';
-            const msg = `${icon} *[EYAD BOT - إشعار آلي]*\n\n📌 *الحدث:* ${ev.messageAr}\n💎 *الأصل:* ${ev.asset}/USDT\n💰 *السعر:* $${ev.price.toLocaleString()}\n🕒 *الوقت:* ${new Date(ev.timestamp).toLocaleTimeString()}`;
+            const tierTitle = isUrgent ? '🚨 [URGENT TRADE | تنفيذ فوري]' : '📊 [POSITION UPDATE | تحديث صفقة]';
+            const msg = `${icon} <b>${tierTitle}</b>\n\n📌 <b>الحدث:</b> ${ev.messageAr}\n💎 <b>الأصل:</b> ${ev.asset}/USDT\n💰 <b>السعر:</b> $${ev.price.toLocaleString()}\n🕒 <b>الوقت:</b> ${new Date(ev.timestamp).toLocaleTimeString()}`;
             fetch('/api/notifications/telegram-send', {
               method: 'POST',
               headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
@@ -792,6 +1006,9 @@ export function App() {
         onOpenStrategyModal={() => setIsStrategyModalOpen(true)}
         onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
         onRefreshData={handleFetchLiveData}
+        checksumReport={checksumReport}
+        isChecksumSyncing={isChecksumSyncing}
+        onForceChecksumSync={() => verifyAndSyncConfigChecksum(true)}
       />
 
       {/* Main Workspace Container */}
@@ -857,6 +1074,22 @@ export function App() {
               {macroStatus?.isBlackoutActive && (
                 <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
               )}
+            </button>
+
+            {/* Tab 5: Institutional Quant & Risk Suite */}
+            <button
+              onClick={() => setActiveMainTab('quant')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded font-mono font-bold text-xs transition-all shrink-0 ${
+                activeMainTab === 'quant'
+                  ? 'bg-indigo-500/20 text-indigo-300 shadow-sm border border-indigo-500/40'
+                  : 'text-gray-400 hover:text-white hover:bg-[#141414]'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5" />
+              <span>{lang === 'ar' ? 'الترسانة الكمية وإدارة المخاطر' : 'Quant & Risk Suite'}</span>
+              <span className="px-1.5 py-0.2 text-[9px] bg-indigo-500/30 text-indigo-300 rounded font-mono">
+                4-in-1
+              </span>
             </button>
 
           </div>
@@ -993,12 +1226,26 @@ export function App() {
                   <BarChart2 className="w-3.5 h-3.5" />
                   <span>{lang === 'ar' ? 'محاكي الباك تيست التاريخي (سنة)' : '1-Year Backtest Engine'}</span>
                 </button>
+
+                <button
+                  onClick={() => setSimSubTab('quant')}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded font-mono text-xs font-bold transition-all ${
+                    simSubTab === 'quant'
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
+                      : 'text-gray-400 hover:text-white hover:bg-[#1a1a1a]'
+                  }`}
+                >
+                  <Cpu className="w-3.5 h-3.5" />
+                  <span>{lang === 'ar' ? 'الترسانة الكمية والمخاطر' : 'Quant & Risk'}</span>
+                </button>
               </div>
 
               <div className="text-[11px] font-mono text-gray-400 px-1 hidden sm:block">
                 {simSubTab === 'paper'
                   ? (lang === 'ar' ? 'تنفيذ صفقات حية برأس مال افتراضي مع وقف خسارة وتتبع آلي' : 'Live virtual execution with SL & Trailing Profit')
-                  : (lang === 'ar' ? 'اختبار استراتيجية إياد على 365 يوماً من بيانات السوق' : 'Backtest EYAD strategy on 365 days of OHLCV data')}
+                  : simSubTab === 'backtest'
+                  ? (lang === 'ar' ? 'اختبار استراتيجية إياد على 365 يوماً من بيانات السوق' : 'Backtest EYAD strategy on 365 days of OHLCV data')
+                  : (lang === 'ar' ? 'مصفوفة الارتباط، مراقبة التمويل، مقارنة ألفا ومحاكاة مونت كارلو' : 'Correlation, funding squeeze, HODL alpha & Monte Carlo')}
               </div>
             </div>
 
@@ -1022,7 +1269,7 @@ export function App() {
                   autoEvents={autoEvents}
                 />
               </div>
-            ) : (
+            ) : simSubTab === 'backtest' ? (
               <BacktestDashboard
                 candles={candles}
                 backtestResult={backtestResult}
@@ -1030,6 +1277,19 @@ export function App() {
                 lang={lang}
                 currentAsset={currentAsset}
                 onSelectAsset={handleSelectAsset}
+              />
+            ) : (
+              <QuantRiskDashboard
+                paperAccount={paperAccount}
+                setPaperAccount={setPaperAccount}
+                currentAsset={currentAsset}
+                livePrices={{
+                  BTC: multiAssetData['BTC']?.price || btcPrice || 68000,
+                  ETH: multiAssetData['ETH']?.price || 2436,
+                  PAXG: multiAssetData['PAXG']?.price || 4456,
+                }}
+                btcPrice={btcPrice}
+                lang={lang}
               />
             )}
           </div>
@@ -1122,16 +1382,61 @@ export function App() {
               <SelfLearningJournal
                 learningState={learningState}
                 trades={backtestResult.trades}
+                paperTrades={paperAccount.tradeHistory}
+                currentAsset={currentAsset}
                 lang={lang}
                 onTriggerAILearning={handleTriggerAILearning}
                 isLearning={isLearningAI}
+                onApplyAdaptiveRule={(newRule) => {
+                  setLearningState((prev) => ({
+                    ...prev,
+                    adaptiveRules: [
+                      ...prev.adaptiveRules.filter((r) => r.id !== newRule.id),
+                      newRule,
+                    ],
+                  }));
+                }}
+                onApplyBannedHours={(newBannedHours) => {
+                  setLearningState((prev) => ({
+                    ...prev,
+                    bannedTradingHours: Array.from(new Set([...prev.bannedTradingHours, ...newBannedHours])),
+                  }));
+                }}
               />
             ) : (
               <BotOperationsPanel
                 lang={lang}
                 currentAsset={currentAsset}
+                paperTrades={paperAccount.tradeHistory}
+                backtestResult={backtestResult}
               />
             )}
+          </div>
+        )}
+
+        {/* VIEW 5: INSTITUTIONAL QUANT RISK & ALPHA SUITE */}
+        {activeMainTab === 'quant' && (
+          <div className="space-y-4">
+            <MultiAssetScanner
+              currentAsset={currentAsset}
+              onSelectAsset={handleSelectAsset}
+              lang={lang}
+              btcPrice={btcPrice}
+              multiAssetPrices={multiAssetData}
+            />
+
+            <QuantRiskDashboard
+              paperAccount={paperAccount}
+              setPaperAccount={setPaperAccount}
+              currentAsset={currentAsset}
+              livePrices={{
+                BTC: multiAssetData['BTC']?.price || btcPrice || 68000,
+                ETH: multiAssetData['ETH']?.price || 2436,
+                PAXG: multiAssetData['PAXG']?.price || 4456,
+              }}
+              btcPrice={btcPrice}
+              lang={lang}
+            />
           </div>
         )}
 

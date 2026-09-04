@@ -201,13 +201,12 @@ export function buildDeterministicSignal({ asset, candles, change24h, liquidityR
     liquidityRegime: liquidityRegime || undefined,
   };
 
+  // Stable deduplication signature representing the discrete trading decision
   const dedupHash = [
     asset,
-    signal.signalType,
     signal.spotAction,
-    signal.entryQualityStage,
-    Math.round(change24h * 10),
-    liquidityRegime?.signature || 'no-liquidity-regime',
+    signal.signalType,
+    signal.entryQualityStage || 'SETUP',
   ].join('|');
 
   return {

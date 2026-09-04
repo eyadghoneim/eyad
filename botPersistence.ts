@@ -8,6 +8,7 @@ const LOCAL_CONFIG_FILE = path.join(LOCAL_DATA_DIR, 'bot_config.json');
 const LOCAL_SIGNALS_FILE = path.join(LOCAL_DATA_DIR, 'signals.json');
 const LOCAL_LOGS_FILE = path.join(LOCAL_DATA_DIR, 'logs.json');
 const LOCAL_NOTIFS_FILE = path.join(LOCAL_DATA_DIR, 'notifications.json');
+const LOCAL_PAPER_FILE = path.join(LOCAL_DATA_DIR, 'paper_account.json');
 
 function loadLocalList<T>(filePath: string): T[] {
   try {
@@ -66,6 +67,20 @@ export interface ServerBotConfig {
   telegramToken: string;
   telegramChatId: string;
   scanIntervalSeconds: number;
+  // Institutional Execution Enhancements
+  spreadFilterEnabled?: boolean;
+  maxSpreadPercent?: number;
+  trancheModeEnabled?: boolean;
+  tranche1Percent?: number;
+  tranche2Percent?: number;
+  maxExposurePercent?: number;
+  correlationGuardEnabled?: boolean;
+  derivativesFilterEnabled?: boolean;
+  telegramAlertTiers?: {
+    urgentTrades: boolean;
+    positionUpdates: boolean;
+    dailyDigest: boolean;
+  };
 }
 
 export interface ServerBotLog {
@@ -140,6 +155,19 @@ export const DEFAULT_BOT_CONFIG: ServerBotConfig = {
   telegramToken: '',
   telegramChatId: '',
   scanIntervalSeconds: 60,
+  spreadFilterEnabled: true,
+  maxSpreadPercent: 0.15,
+  trancheModeEnabled: true,
+  tranche1Percent: 60,
+  tranche2Percent: 40,
+  maxExposurePercent: 50,
+  correlationGuardEnabled: true,
+  derivativesFilterEnabled: true,
+  telegramAlertTiers: {
+    urgentTrades: true,
+    positionUpdates: true,
+    dailyDigest: true,
+  },
 };
 
 function sanitizeForFirestore<T extends Record<string, any>>(data: T): Record<string, any> {
@@ -471,6 +499,19 @@ export function getSafeConfigForClient(config: ServerBotConfig) {
     maskedTelegramChatId: maskChatId(config.telegramChatId),
     hasTelegramToken: Boolean(config.telegramToken),
     hasTelegramChatId: Boolean(config.telegramChatId),
+    spreadFilterEnabled: config.spreadFilterEnabled ?? true,
+    maxSpreadPercent: config.maxSpreadPercent ?? 0.15,
+    trancheModeEnabled: config.trancheModeEnabled ?? true,
+    tranche1Percent: config.tranche1Percent ?? 60,
+    tranche2Percent: config.tranche2Percent ?? 40,
+    maxExposurePercent: config.maxExposurePercent ?? 50,
+    correlationGuardEnabled: config.correlationGuardEnabled ?? true,
+    derivativesFilterEnabled: config.derivativesFilterEnabled ?? true,
+    telegramAlertTiers: config.telegramAlertTiers || {
+      urgentTrades: true,
+      positionUpdates: true,
+      dailyDigest: true,
+    },
   };
 }
 
@@ -544,4 +585,109 @@ export async function listNotifications(limit = 100): Promise<NotificationRecord
 
 export function getDbPath() {
   return 'Firebase Firestore';
+}
+
+export interface ServerPaperAccount {
+  virtualBalanceUsd: number;
+  allocatedCapitalUsd: number;
+  totalRealizedPnlUsd: number;
+  positions: any[];
+  tradeHistory: any[];
+  autoExecuteSignals: boolean;
+  trancheModeEnabled?: boolean;
+  spreadFilterEnabled?: boolean;
+  maxSpreadTolerancePct?: number;
+  maxExposurePct?: number;
+  correlationGuardEnabled?: boolean;
+  derivativesFilterEnabled?: boolean;
+  initialBalanceUsd?: number;
+  benchmarkStartTime?: number;
+  benchmarkStartBtcPrice?: number;
+  lastSyncedAt?: number;
+}
+
+export async function loadPaperAccount(): Promise<ServerPaperAccount> {
+  const defaultAccount: ServerPaperAccount = {
+    virtualBalanceUsd: 10000,
+    allocatedCapitalUsd: 0,
+    totalRealizedPnlUsd: 0,
+    positions: [],
+    tradeHistory: [],
+    autoExecuteSignals: true,
+    trancheModeEnabled: true,
+    spreadFilterEnabled: true,
+    maxSpreadTolerancePct: 0.15,
+    maxExposurePct: 50,
+    correlationGuardEnabled: true,
+    derivativesFilterEnabled: true,
+    initialBalanceUsd: 10000,
+    benchmarkStartTime: Date.now(),
+    benchmarkStartBtcPrice: 65000,
+    lastSyncedAt: Date.now(),
+  };
+
+  if (db) {
+    try {
+      const snap = await getDoc(doc(db, 'bot_paper_account', 'primary'));
+      if (snap.exists()) {
+        return { ...defaultAccount, ...(snap.data() as ServerPaperAccount) };
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  try {
+    if (fs.existsSync(LOCAL_PAPER_FILE)) {
+      const raw = fs.readFileSync(LOCAL_PAPER_FILE, 'utf-8');
+      return { ...defaultAccount, ...JSON.parse(raw) };
+    }
+  } catch {}
+
+  return defaultAccount;
+}
+
+export async function savePaperAccount(account: ServerPaperAccount): Promise<void> {
+  const payload = {
+    ...account,
+    lastSyncedAt: Date.now(),
+  };
+
+  if (db) {
+    try {
+      await setDoc(doc(db, 'bot_paper_account', 'primary'), sanitizeForFirestore(payload));
+    } catch {
+      // fallback
+    }
+  }
+
+  try {
+    ensureDataDirExists();
+    fs.writeFileSync(LOCAL_PAPER_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[Persistence] Failed to write local paper account:', e);
+  }
+}
+
+export async function resetPaperAccount(): Promise<ServerPaperAccount> {
+  const resetState: ServerPaperAccount = {
+    virtualBalanceUsd: 10000,
+    allocatedCapitalUsd: 0,
+    totalRealizedPnlUsd: 0,
+    positions: [],
+    tradeHistory: [],
+    autoExecuteSignals: true,
+    trancheModeEnabled: true,
+    spreadFilterEnabled: true,
+    maxSpreadTolerancePct: 0.15,
+    maxExposurePct: 50,
+    correlationGuardEnabled: true,
+    derivativesFilterEnabled: true,
+    initialBalanceUsd: 10000,
+    benchmarkStartTime: Date.now(),
+    benchmarkStartBtcPrice: 65000,
+    lastSyncedAt: Date.now(),
+  };
+  await savePaperAccount(resetState);
+  return resetState;
 }

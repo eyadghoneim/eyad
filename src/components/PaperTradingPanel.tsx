@@ -24,6 +24,7 @@ import {
   Wand2
 } from 'lucide-react';
 import { PaperAccount, PaperPosition, AIReasoning, SupportedAsset, TradeRecord } from '../types';
+import { getBotAdminHeaders } from '../utils/botAdminAuth';
 
 interface PaperTradingPanelProps {
   paperAccount: PaperAccount;
@@ -150,6 +151,11 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
 
   // Reset virtual paper portfolio
   const handleResetPortfolio = () => {
+    fetch('/api/paper/reset', {
+      method: 'POST',
+      headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
+    }).catch(() => {});
+
     setPaperAccount({
       virtualBalanceUsd: 10000,
       allocatedCapitalUsd: 0,
@@ -157,6 +163,9 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
       positions: [],
       tradeHistory: [],
       autoExecuteSignals: true,
+      spreadFilterEnabled: paperAccount.spreadFilterEnabled ?? true,
+      maxSpreadTolerancePct: paperAccount.maxSpreadTolerancePct ?? 0.15,
+      trancheModeEnabled: paperAccount.trancheModeEnabled ?? true,
     });
     setShowResetConfirm(false);
   };
@@ -266,6 +275,94 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
           </span>
         </div>
       )}
+
+      {/* Institutional Execution Suite Toolbar */}
+      <div className="bg-[#0e0e0e] border border-[#222] p-3 rounded-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* Spread Guard Filter */}
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 cursor-pointer font-bold text-gray-200">
+              <input
+                type="checkbox"
+                checked={paperAccount.spreadFilterEnabled !== false}
+                onChange={(e) =>
+                  setPaperAccount((p) => ({ ...p, spreadFilterEnabled: e.target.checked }))
+                }
+                className="accent-indigo-500 rounded"
+              />
+              <span className="text-indigo-400">
+                {lang === 'ar' ? '🛡️ فلتر الانزلاق (Spread Guard)' : '🛡️ Spread Guard'}
+              </span>
+            </label>
+            <select
+              value={paperAccount.maxSpreadTolerancePct ?? 0.15}
+              onChange={(e) =>
+                setPaperAccount((p) => ({ ...p, maxSpreadTolerancePct: parseFloat(e.target.value) }))
+              }
+              disabled={paperAccount.spreadFilterEnabled === false}
+              className="bg-[#050505] border border-[#2b2b2b] text-gray-300 rounded px-1.5 py-0.5 text-[11px] disabled:opacity-40"
+            >
+              <option value="0.05">0.05% {lang === 'ar' ? '(فائق الصرامة)' : '(Ultra tight)'}</option>
+              <option value="0.10">0.10% {lang === 'ar' ? '(موصى به)' : '(Recommended)'}</option>
+              <option value="0.15">0.15% {lang === 'ar' ? '(قياسي)' : '(Standard)'}</option>
+              <option value="0.25">0.25% {lang === 'ar' ? '(مرن)' : '(Flexible)'}</option>
+            </select>
+          </div>
+
+          {/* Dual-Tranche Mode */}
+          <label className="flex items-center gap-1.5 cursor-pointer font-bold text-gray-200 border-l border-[#222] pl-3">
+            <input
+              type="checkbox"
+              checked={paperAccount.trancheModeEnabled !== false}
+              onChange={(e) =>
+                setPaperAccount((p) => ({ ...p, trancheModeEnabled: e.target.checked }))
+              }
+              className="accent-amber-500 rounded"
+            />
+            <span className="text-amber-300">
+              {lang === 'ar' ? '🎯 دخول مجزأ (60/40)' : '🎯 Tranches (60/40)'}
+            </span>
+          </label>
+
+          {/* Correlation Guard */}
+          <label className="flex items-center gap-1.5 cursor-pointer font-bold text-gray-200 border-l border-[#222] pl-3">
+            <input
+              type="checkbox"
+              checked={paperAccount.correlationGuardEnabled !== false}
+              onChange={(e) =>
+                setPaperAccount((p) => ({ ...p, correlationGuardEnabled: e.target.checked }))
+              }
+              className="accent-purple-500 rounded"
+            />
+            <span className="text-purple-400">
+              {lang === 'ar' ? '⚡ فلتر الارتباط' : '⚡ Correlation'}
+            </span>
+          </label>
+
+          {/* Max Exposure Pill */}
+          <div className="flex items-center gap-1.5 border-l border-[#222] pl-3 text-[11px]">
+            <span className="text-gray-400">{lang === 'ar' ? 'سقف التعرض:' : 'Max Exp:'}</span>
+            <select
+              value={paperAccount.maxExposurePct ?? 50}
+              onChange={(e) =>
+                setPaperAccount((p) => ({ ...p, maxExposurePct: parseInt(e.target.value, 10) }))
+              }
+              className="bg-[#050505] border border-[#2b2b2b] text-indigo-300 font-bold rounded px-1 py-0.5 text-[11px]"
+            >
+              <option value="30">30% {lang === 'ar' ? '(متحفظ)' : '(Conservative)'}</option>
+              <option value="40">40% {lang === 'ar' ? '(متوازن)' : '(Balanced)'}</option>
+              <option value="50">50% {lang === 'ar' ? '(افتراضي)' : '(Default)'}</option>
+              <option value="70">70% {lang === 'ar' ? '(جريء)' : '(Aggressive)'}</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Server & Cloud Sync Badge */}
+        <div className="flex items-center gap-1.5 text-[11px] text-emerald-400/90 font-mono bg-emerald-950/20 px-2.5 py-1 rounded border border-emerald-500/20">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>{lang === 'ar' ? '☁️ مزامنة سحابية 24/7 (Firestore + WAL)' : '☁️ 24/7 Cloud Synced (Firestore + WAL)'}</span>
+        </div>
+      </div>
 
       {/* Confirmation Modal for Reset */}
       {showResetConfirm && (
@@ -429,13 +526,23 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
               return (
                 <div key={pos.id} className="bg-[#0c0c0c] p-3 rounded border border-[#222] space-y-2 relative">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="px-2 py-0.5 rounded text-xs font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
                         {pos.asset}/USDT
                       </span>
                       <span className="text-xs text-gray-400">
                         {pos.amount.toFixed(4)} {pos.asset} (${pos.allocatedUsd.toFixed(0)})
                       </span>
+                      {pos.trancheCount && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                          {pos.trancheCount === 1 ? '🎯 Tranche 1/2 (60%)' : '🎯 Tranche 2/2 (Blended)'}
+                        </span>
+                      )}
+                      {pos.executionSpreadPct !== undefined && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30 font-mono">
+                          🛡️ {pos.executionSpreadPct.toFixed(3)}% Spread
+                        </span>
+                      )}
                       {pos.partialSold && (
                         <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
                           TP1 Locked (Break-Even)

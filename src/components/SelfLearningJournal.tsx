@@ -16,21 +16,30 @@ import {
   TrendingDown
 } from 'lucide-react';
 import { LearningState, TradeRecord } from '../types';
+import { GeminiLessonsLearnedCard } from './GeminiLessonsLearnedCard';
 
 interface SelfLearningJournalProps {
   learningState: LearningState;
   trades: TradeRecord[];
+  paperTrades?: any[];
+  currentAsset?: string;
   lang: 'ar' | 'en';
   onTriggerAILearning: () => void;
   isLearning: boolean;
+  onApplyAdaptiveRule?: (rule: any) => void;
+  onApplyBannedHours?: (hours: number[]) => void;
 }
 
 export const SelfLearningJournal: React.FC<SelfLearningJournalProps> = ({
   learningState,
   trades,
+  paperTrades = [],
+  currentAsset = 'BTC',
   lang,
   onTriggerAILearning,
   isLearning,
+  onApplyAdaptiveRule,
+  onApplyBannedHours,
 }) => {
   const [filterType, setFilterType] = useState<'ALL' | 'LOSSES' | 'WINS'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,6 +88,16 @@ export const SelfLearningJournal: React.FC<SelfLearningJournalProps> = ({
           <span>{isLearning ? (lang === 'ar' ? 'جاري تدقيق الخسائر...' : 'Learning...') : (lang === 'ar' ? 'تفعيل دورة تعلم الذكاء' : 'Trigger AI Learning Cycle')}</span>
         </button>
       </div>
+
+      {/* DEDICATED CARD: Gemini Flash 3.8 Trade History Deep Analyzer & Lessons Learned */}
+      <GeminiLessonsLearnedCard
+        trades={trades}
+        paperTrades={paperTrades}
+        currentAsset={currentAsset}
+        lang={lang}
+        onApplyAdaptiveRule={onApplyAdaptiveRule}
+        onApplyBannedHours={onApplyBannedHours}
+      />
 
       {/* 24-Hour Win/Loss Heatmap Matrix (كانت الساعة كام؟) */}
       <div className="bg-[#0c0c0c] p-3 rounded border border-[#222] space-y-2.5">

@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Activity, AlertTriangle, Database, Radio, RefreshCw, ShieldCheck, Siren, TerminalSquare } from 'lucide-react';
-import { SupportedAsset } from '../types';
+import { Activity, AlertTriangle, Award, Database, Radio, RefreshCw, Scale, ShieldCheck, Siren, Sparkles, TerminalSquare } from 'lucide-react';
+import { BacktestResult, SupportedAsset, TradeRecord } from '../types';
 import { getBotAdminHeaders } from '../utils/botAdminAuth';
+import { SignalSuccessMetricsPanel } from './SignalSuccessMetricsPanel';
+import { GeminiInsightsPanel } from './GeminiInsightsPanel';
+import { ExecutionGapComparisonPanel } from './ExecutionGapComparisonPanel';
 
 interface BotOperationsPanelProps {
   lang: 'ar' | 'en';
   currentAsset: SupportedAsset;
+  paperTrades?: TradeRecord[];
+  backtestResult?: BacktestResult | null;
 }
 
 interface BotDashboardSnapshot {
@@ -74,7 +79,13 @@ const signalColors: Record<string, string> = {
   HOLD: 'text-slate-300 border-slate-500/25 bg-slate-950/10',
 };
 
-export const BotOperationsPanel: React.FC<BotOperationsPanelProps> = ({ lang, currentAsset }) => {
+export const BotOperationsPanel: React.FC<BotOperationsPanelProps> = ({
+  lang,
+  currentAsset,
+  paperTrades = [],
+  backtestResult,
+}) => {
+  const [opsSubView, setOpsSubView] = useState<'gap' | 'insights' | 'metrics' | 'daemon'>('gap');
   const [dashboard, setDashboard] = useState<BotDashboardSnapshot | null>(null);
   const [logs, setLogs] = useState<ServerBotLogEntry[]>([]);
   const [signals, setSignals] = useState<PersistedBotSignalView[]>([]);
@@ -141,67 +152,153 @@ export const BotOperationsPanel: React.FC<BotOperationsPanelProps> = ({ lang, cu
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-4 bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-gray-500 font-mono">{lang === 'ar' ? 'حالة السيرفر والدايمون' : 'Server daemon status'}</div>
-              <div className="text-lg font-bold text-white flex items-center gap-2"><Radio className="w-4 h-4 text-blue-400" /><span>{lang === 'ar' ? 'مركز العمليات' : 'Operations Center'}</span></div>
+      {/* Sub-tab Navigation for Operations Center */}
+      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 bg-[#0d0d0d] p-2 rounded-lg border border-[#1f1f1f]">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setOpsSubView('gap')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded font-mono text-xs font-bold transition-all ${
+              opsSubView === 'gap'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                : 'text-gray-400 hover:text-white hover:bg-[#1a1a1a]'
+            }`}
+          >
+            <Scale className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{lang === 'ar' ? 'التحليل المقارن (الفعلي vs الباك تيست)' : 'Side-by-Side Execution Gap'}</span>
+          </button>
+
+          <button
+            onClick={() => setOpsSubView('insights')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded font-mono text-xs font-bold transition-all ${
+              opsSubView === 'insights'
+                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
+                : 'text-gray-400 hover:text-white hover:bg-[#1a1a1a]'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+            <span>{lang === 'ar' ? 'دروس مستفادة (Gemini Flash 3.8)' : 'Actionable Insights (Gemini 3.8 Flash)'}</span>
+          </button>
+
+          <button
+            onClick={() => setOpsSubView('metrics')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded font-mono text-xs font-bold transition-all ${
+              opsSubView === 'metrics'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                : 'text-gray-400 hover:text-white hover:bg-[#1a1a1a]'
+            }`}
+          >
+            <Award className="w-3.5 h-3.5" />
+            <span>{lang === 'ar' ? 'مصفوفة مقاييس النجاح (48h)' : 'Success Metrics Matrix (48h)'}</span>
+          </button>
+
+          <button
+            onClick={() => setOpsSubView('daemon')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded font-mono text-xs font-bold transition-all ${
+              opsSubView === 'daemon'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                : 'text-gray-400 hover:text-white hover:bg-[#1a1a1a]'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>{lang === 'ar' ? 'مراقبة السيرفر واللوجز المباشرة' : 'Server Daemon & Live Logs'}</span>
+          </button>
+        </div>
+
+        <div className="text-[11px] font-mono text-gray-400 px-1 hidden xl:block">
+          {opsSubView === 'gap'
+            ? (lang === 'ar' ? 'تحليل مقارن دقيق لفجوات الانزلاق السعري بين التنفيذ الحقيقي والباك تيست النظري' : 'Side-by-side comparative analysis of slippage gaps and execution latency vs backtest')
+            : opsSubView === 'insights'
+            ? (lang === 'ar' ? 'تحليل نوعي ذكي للأسباب الفنية لنجاح أو تفادي الصفقات' : 'Deep AI analysis of why signals won or exited based on volatility')
+            : opsSubView === 'metrics'
+            ? (lang === 'ar' ? 'تدقيق كمي دقيق لتطور أسعار الصفقات ومعدل النجاح' : 'Quantitative audit of signal accuracy vs. actual price moves')
+            : (lang === 'ar' ? 'مراقبة الفاحص الآلي في الخلفية وسجلات الحماية' : 'Live daemon monitoring and secure runtime logs')}
+        </div>
+      </div>
+
+      {opsSubView === 'gap' ? (
+        <ExecutionGapComparisonPanel
+          lang={lang}
+          currentAsset={currentAsset}
+          paperTrades={paperTrades}
+          backtestResult={backtestResult}
+        />
+      ) : opsSubView === 'insights' ? (
+        <GeminiInsightsPanel
+          lang={lang}
+          currentAsset={currentAsset}
+        />
+      ) : opsSubView === 'metrics' ? (
+        <SignalSuccessMetricsPanel
+          lang={lang}
+          currentAsset={currentAsset}
+          persistedSignals={signals}
+          lastKnownPrices={daemon?.lastKnownPrices}
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+            <div className="xl:col-span-4 bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500 font-mono">{lang === 'ar' ? 'حالة السيرفر والدايمون' : 'Server daemon status'}</div>
+                  <div className="text-lg font-bold text-white flex items-center gap-2"><Radio className="w-4 h-4 text-blue-400" /><span>{lang === 'ar' ? 'مركز العمليات' : 'Operations Center'}</span></div>
+                </div>
+                <div className={`px-2 py-1 rounded-full text-[11px] font-bold border ${daemon?.active ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' : 'bg-rose-950/30 border-rose-500/30 text-rose-300'}`}>{daemon?.active ? (lang === 'ar' ? 'نشط' : 'Active') : (lang === 'ar' ? 'متوقف' : 'Stopped')}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'عدد المسحات' : 'Scans'}</div><div className="text-white text-base font-bold">{daemon?.scanCount ?? 0}</div></div>
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'الفاصل' : 'Interval'}</div><div className="text-white text-base font-bold">{daemon?.scanIntervalSeconds ?? 0}s</div></div>
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'تلجرام' : 'Telegram'}</div><div className="text-white text-base font-bold">{dashboard?.config?.telegramConfigured ? (lang === 'ar' ? 'جاهز' : 'Ready') : (lang === 'ar' ? 'غير مكتمل' : 'Not ready')}</div></div>
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'آخر مسح' : 'Last scan'}</div><div className="text-white text-sm font-bold">{daemon?.lastScanTime ? new Date(daemon.lastScanTime).toLocaleTimeString() : '--'}</div></div>
+              </div>
+              <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3 text-xs text-gray-300 space-y-2">
+                <div className="flex items-center gap-2 text-blue-300 font-bold"><Activity className="w-3.5 h-3.5" />{lang === 'ar' ? 'آخر أسعار الخادم' : 'Server last prices'}</div>
+                <div className="grid grid-cols-3 gap-2">{Object.entries(daemon?.lastKnownPrices || {}).map(([asset, price]) => <div key={asset} className="rounded border border-[#222] bg-black/20 p-2"><div className="text-gray-500 text-[10px]">{asset}</div><div className="text-white font-bold">${Number(price || 0).toLocaleString()}</div></div>)}</div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={refreshAll} className="flex-1 py-2 rounded-lg border border-[#333] bg-[#111114] hover:bg-[#18181b] text-gray-100 text-xs font-bold flex items-center justify-center gap-2"><RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /><span>{lang === 'ar' ? 'تحديث' : 'Refresh'}</span></button>
+                <button onClick={handleRunScanNow} className="flex-1 py-2 rounded-lg border border-blue-500/30 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 text-xs font-bold flex items-center justify-center gap-2"><Siren className="w-3.5 h-3.5" /><span>{lang === 'ar' ? 'مسح فوري' : 'Scan now'}</span></button>
+              </div>
+              {error && <div className="rounded-lg border border-rose-500/30 bg-rose-950/20 p-3 text-xs text-rose-200 flex items-start gap-2"><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
             </div>
-            <div className={`px-2 py-1 rounded-full text-[11px] font-bold border ${daemon?.active ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' : 'bg-rose-950/30 border-rose-500/30 text-rose-300'}`}>{daemon?.active ? (lang === 'ar' ? 'نشط' : 'Active') : (lang === 'ar' ? 'متوقف' : 'Stopped')}</div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'عدد المسحات' : 'Scans'}</div><div className="text-white text-base font-bold">{daemon?.scanCount ?? 0}</div></div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'الفاصل' : 'Interval'}</div><div className="text-white text-base font-bold">{daemon?.scanIntervalSeconds ?? 0}s</div></div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'تلجرام' : 'Telegram'}</div><div className="text-white text-base font-bold">{dashboard?.config?.telegramConfigured ? (lang === 'ar' ? 'جاهز' : 'Ready') : (lang === 'ar' ? 'غير مكتمل' : 'Not ready')}</div></div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'آخر مسح' : 'Last scan'}</div><div className="text-white text-sm font-bold">{daemon?.lastScanTime ? new Date(daemon.lastScanTime).toLocaleTimeString() : '--'}</div></div>
-          </div>
-          <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3 text-xs text-gray-300 space-y-2">
-            <div className="flex items-center gap-2 text-blue-300 font-bold"><Activity className="w-3.5 h-3.5" />{lang === 'ar' ? 'آخر أسعار الخادم' : 'Server last prices'}</div>
-            <div className="grid grid-cols-3 gap-2">{Object.entries(daemon?.lastKnownPrices || {}).map(([asset, price]) => <div key={asset} className="rounded border border-[#222] bg-black/20 p-2"><div className="text-gray-500 text-[10px]">{asset}</div><div className="text-white font-bold">${Number(price || 0).toLocaleString()}</div></div>)}</div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={refreshAll} className="flex-1 py-2 rounded-lg border border-[#333] bg-[#111114] hover:bg-[#18181b] text-gray-100 text-xs font-bold flex items-center justify-center gap-2"><RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /><span>{lang === 'ar' ? 'تحديث' : 'Refresh'}</span></button>
-            <button onClick={handleRunScanNow} className="flex-1 py-2 rounded-lg border border-blue-500/30 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 text-xs font-bold flex items-center justify-center gap-2"><Siren className="w-3.5 h-3.5" /><span>{lang === 'ar' ? 'مسح فوري' : 'Scan now'}</span></button>
-          </div>
-          {error && <div className="rounded-lg border border-rose-500/30 bg-rose-950/20 p-3 text-xs text-rose-200 flex items-start gap-2"><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span></div>}
-        </div>
 
-        <div className="xl:col-span-4 bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
-          <div className="flex items-center gap-2 text-white font-bold"><Database className="w-4 h-4 text-amber-400" /><span>{lang === 'ar' ? 'إحصاءات قاعدة البيانات' : 'Database stats'}</span></div>
-          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'الإشارات' : 'Signals'}</div><div className="text-white text-base font-bold">{dbStats?.signalRows ?? signals.length}</div></div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'اللوجز' : 'Logs'}</div><div className="text-white text-base font-bold">{dbStats?.logRows ?? logs.length}</div></div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'حجم القاعدة' : 'DB size'}</div><div className="text-white text-sm font-bold">{((dbStats?.databaseSizeBytes ?? 0) / 1024).toFixed(1)} KB</div></div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">WAL</div><div className="text-white text-sm font-bold">{((dbStats?.walSizeBytes ?? 0) / 1024).toFixed(1)} KB</div></div>
-          </div>
-          <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3 space-y-2 text-xs text-gray-300">
-            <div className="flex items-center gap-2 text-emerald-300 font-bold"><ShieldCheck className="w-3.5 h-3.5" />{lang === 'ar' ? 'ملخص الإشارات المحفوظة' : 'Persisted signal summary'}</div>
-            <div className="grid grid-cols-3 gap-2">{['BTC','ETH','PAXG'].map((asset) => <div key={asset} className="rounded border border-[#222] bg-black/20 p-2"><div className="text-gray-500 text-[10px]">{asset}</div><div className="text-white font-bold">{signals.filter((item) => item.asset === asset).length}</div></div>)}</div>
-          </div>
-        </div>
+            <div className="xl:col-span-4 bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-white font-bold"><Database className="w-4 h-4 text-amber-400" /><span>{lang === 'ar' ? 'إحصاءات قاعدة البيانات' : 'Database stats'}</span></div>
+              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'الإشارات' : 'Signals'}</div><div className="text-white text-base font-bold">{dbStats?.signalRows ?? signals.length}</div></div>
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'اللوجز' : 'Logs'}</div><div className="text-white text-base font-bold">{dbStats?.logRows ?? logs.length}</div></div>
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">{lang === 'ar' ? 'حجم القاعدة' : 'DB size'}</div><div className="text-white text-sm font-bold">{((dbStats?.databaseSizeBytes ?? 0) / 1024).toFixed(1)} KB</div></div>
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3"><div className="text-gray-500">WAL</div><div className="text-white text-sm font-bold">{((dbStats?.walSizeBytes ?? 0) / 1024).toFixed(1)} KB</div></div>
+              </div>
+              <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3 space-y-2 text-xs text-gray-300">
+                <div className="flex items-center gap-2 text-emerald-300 font-bold"><ShieldCheck className="w-3.5 h-3.5" />{lang === 'ar' ? 'ملخص الإشارات المحفوظة' : 'Persisted signal summary'}</div>
+                <div className="grid grid-cols-3 gap-2">{['BTC','ETH','PAXG'].map((asset) => <div key={asset} className="rounded border border-[#222] bg-black/20 p-2"><div className="text-gray-500 text-[10px]">{asset}</div><div className="text-white font-bold">{signals.filter((item) => item.asset === asset).length}</div></div>)}</div>
+              </div>
+            </div>
 
-        <div className="xl:col-span-4 bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
-          <div className="flex items-center gap-2 text-white font-bold"><TerminalSquare className="w-4 h-4 text-purple-400" /><span>{lang === 'ar' ? 'الحماية والقيود' : 'Security posture'}</span></div>
-          <div className="space-y-2 text-xs text-gray-300">
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3">{lang === 'ar' ? 'النقاط الحساسة محمية الآن بطبقة same-origin + rate limiting + security headers، مع إخفاء التوكنات تماماً عن الواجهة.' : 'Sensitive mutations now use same-origin checks, rate limiting, security headers, and never expose raw secrets to the UI.'}</div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3">{lang === 'ar' ? 'قناة التنبيهات المعتمدة حالياً هي تلجرام، مع استمرار حماية التوكنات وإخفائها عن الواجهة.' : 'Telegram is the active alert channel, while secrets remain masked and protected from the UI.'}</div>
-            <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3 font-mono text-[11px]">{lang === 'ar' ? 'نسخة المخطط:' : 'Schema version:'} <span className="text-white font-bold">{dbStats?.schemaVersion ?? 0}</span><br />{lang === 'ar' ? 'آخر تنظيف:' : 'Last prune:'} <span className="text-white font-bold">{dbStats?.lastPrunedAt ? new Date(dbStats.lastPrunedAt).toLocaleString() : '--'}</span></div>
+            <div className="xl:col-span-4 bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-white font-bold"><TerminalSquare className="w-4 h-4 text-purple-400" /><span>{lang === 'ar' ? 'الحماية والقيود' : 'Security posture'}</span></div>
+              <div className="space-y-2 text-xs text-gray-300">
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3">{lang === 'ar' ? 'النقاط الحساسة محمية الآن بطبقة same-origin + rate limiting + security headers، مع إخفاء التوكنات تماماً عن الواجهة.' : 'Sensitive mutations now use same-origin checks, rate limiting, security headers, and never expose raw secrets to the UI.'}</div>
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3">{lang === 'ar' ? 'قناة التنبيهات المعتمدة حالياً هي تلجرام، مع استمرار حماية التوكنات وإخفائها عن الواجهة.' : 'Telegram is the active alert channel, while secrets remain masked and protected from the UI.'}</div>
+                <div className="rounded-lg border border-[#222] bg-[#0c0c0c] p-3 font-mono text-[11px]">{lang === 'ar' ? 'نسخة المخطط:' : 'Schema version:'} <span className="text-white font-bold">{dbStats?.schemaVersion ?? 0}</span><br />{lang === 'ar' ? 'آخر تنظيف:' : 'Last prune:'} <span className="text-white font-bold">{dbStats?.lastPrunedAt ? new Date(dbStats.lastPrunedAt).toLocaleString() : '--'}</span></div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between"><div className="text-white font-bold">{lang === 'ar' ? `آخر إشارات ${currentAsset}` : `Recent ${currentAsset} signals`}</div><div className="text-[11px] text-gray-500 font-mono">{filteredSignals.length}</div></div>
-          <div className="space-y-2 max-h-[520px] overflow-auto pr-1">{filteredSignals.length === 0 ? <div className="rounded-lg border border-dashed border-[#333] p-4 text-sm text-gray-500 text-center">{lang === 'ar' ? 'لا توجد إشارات محفوظة بعد لهذا الأصل.' : 'No persisted signals yet for this asset.'}</div> : filteredSignals.map((signal) => <div key={signal.id} className={`rounded-lg border p-3 ${signalColors[signal.signalType] || signalColors.HOLD}`}><div className="flex items-start justify-between gap-3"><div><div className="font-bold text-sm">{signal.signalType} • {signal.spotAction}</div><div className="text-[11px] opacity-80">{new Date(signal.timestamp).toLocaleString()}</div></div><div className="text-right font-mono text-xs"><div>{lang === 'ar' ? 'الثقة' : 'Confidence'}: <span className="font-bold text-white">{signal.convictionScore}%</span></div><div>{lang === 'ar' ? 'السعر' : 'Price'}: <span className="font-bold text-white">${signal.price.toLocaleString()}</span></div></div></div><div className="grid grid-cols-2 gap-2 mt-3 text-[11px] font-mono"><div className="rounded border border-black/20 bg-black/10 p-2">Entry: <span className="text-white font-bold">${signal.entryPrice.toLocaleString()}</span></div><div className="rounded border border-black/20 bg-black/10 p-2">SL: <span className="text-white font-bold">${signal.stopLoss.toLocaleString()}</span></div><div className="rounded border border-black/20 bg-black/10 p-2">TP1: <span className="text-white font-bold">${signal.target1.toLocaleString()}</span></div><div className="rounded border border-black/20 bg-black/10 p-2">TP2: <span className="text-white font-bold">${signal.target2.toLocaleString()}</span></div></div><div className="mt-3 text-xs leading-6 text-gray-100">{lang === 'ar' ? signal.summaryAr : signal.summaryEn}</div></div>)}</div>
-        </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between"><div className="text-white font-bold">{lang === 'ar' ? `آخر إشارات ${currentAsset}` : `Recent ${currentAsset} signals`}</div><div className="text-[11px] text-gray-500 font-mono">{filteredSignals.length}</div></div>
+              <div className="space-y-2 max-h-[520px] overflow-auto pr-1">{filteredSignals.length === 0 ? <div className="rounded-lg border border-dashed border-[#333] p-4 text-sm text-gray-500 text-center">{lang === 'ar' ? 'لا توجد إشارات محفوظة بعد لهذا الأصل.' : 'No persisted signals yet for this asset.'}</div> : filteredSignals.map((signal) => <div key={signal.id} className={`rounded-lg border p-3 ${signalColors[signal.signalType] || signalColors.HOLD}`}><div className="flex items-start justify-between gap-3"><div><div className="font-bold text-sm">{signal.signalType} • {signal.spotAction}</div><div className="text-[11px] opacity-80">{new Date(signal.timestamp).toLocaleString()}</div></div><div className="text-right font-mono text-xs"><div>{lang === 'ar' ? 'الثقة' : 'Confidence'}: <span className="font-bold text-white">{signal.convictionScore}%</span></div><div>{lang === 'ar' ? 'السعر' : 'Price'}: <span className="font-bold text-white">${signal.price.toLocaleString()}</span></div></div></div><div className="grid grid-cols-2 gap-2 mt-3 text-[11px] font-mono"><div className="rounded border border-black/20 bg-black/10 p-2">Entry: <span className="text-white font-bold">${signal.entryPrice.toLocaleString()}</span></div><div className="rounded border border-black/20 bg-black/10 p-2">SL: <span className="text-white font-bold">${signal.stopLoss.toLocaleString()}</span></div><div className="rounded border border-black/20 bg-black/10 p-2">TP1: <span className="text-white font-bold">${signal.target1.toLocaleString()}</span></div><div className="rounded border border-black/20 bg-black/10 p-2">TP2: <span className="text-white font-bold">${signal.target2.toLocaleString()}</span></div></div><div className="mt-3 text-xs leading-6 text-gray-100">{lang === 'ar' ? signal.summaryAr : signal.summaryEn}</div></div>)}</div>
+            </div>
 
-        <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between"><div className="text-white font-bold">{lang === 'ar' ? `سجل العمليات واللوجز (${currentAsset})` : `Operation logs (${currentAsset})`}</div><div className="text-[11px] text-gray-500 font-mono">{filteredLogs.length}</div></div>
-          <div className="space-y-2 max-h-[520px] overflow-auto pr-1">{filteredLogs.length === 0 ? <div className="rounded-lg border border-dashed border-[#333] p-4 text-sm text-gray-500 text-center">{lang === 'ar' ? 'لا توجد لوجز مطابقة حالياً.' : 'No matching logs yet.'}</div> : filteredLogs.map((log) => <div key={log.id} className={`rounded-lg border p-3 ${logColors[log.type]}`}><div className="flex items-center justify-between gap-3"><div className="font-bold text-sm flex items-center gap-2"><span>{log.type}</span>{log.asset && <span className="text-[11px] px-1.5 py-0.5 rounded bg-black/20 border border-black/20">{log.asset}</span>}</div><div className="text-[11px] opacity-75 font-mono">{new Date(log.timestamp).toLocaleString()}</div></div><div className="mt-2 text-xs leading-6">{log.message}</div></div>)}</div>
-        </div>
-      </div>
+            <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between"><div className="text-white font-bold">{lang === 'ar' ? `سجل العمليات واللوجز (${currentAsset})` : `Operation logs (${currentAsset})`}</div><div className="text-[11px] text-gray-500 font-mono">{filteredLogs.length}</div></div>
+              <div className="space-y-2 max-h-[520px] overflow-auto pr-1">{filteredLogs.length === 0 ? <div className="rounded-lg border border-dashed border-[#333] p-4 text-sm text-gray-500 text-center">{lang === 'ar' ? 'لا توجد لوجز مطابقة حالياً.' : 'No matching logs yet.'}</div> : filteredLogs.map((log) => <div key={log.id} className={`rounded-lg border p-3 ${logColors[log.type]}`}><div className="flex items-center justify-between gap-3"><div className="font-bold text-sm flex items-center gap-2"><span>{log.type}</span>{log.asset && <span className="text-[11px] px-1.5 py-0.5 rounded bg-black/20 border border-black/20">{log.asset}</span>}</div><div className="text-[11px] opacity-75 font-mono">{new Date(log.timestamp).toLocaleString()}</div></div><div className="mt-2 text-xs leading-6">{log.message}</div></div>)}</div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

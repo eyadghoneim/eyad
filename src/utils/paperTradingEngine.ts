@@ -244,7 +244,9 @@ export function autoOpenPaperTradeOnSignal(
   asset: SupportedAsset,
   livePrice: number,
   aiSignal: AIReasoning,
-  allocationPercent: number = 25
+  allocationPercent: number = 25,
+  spreadPercent?: number,
+  derivativesData?: { fundingRate: number; sentiment: string }
 ): { updatedAccount: PaperAccount; opened: boolean; event?: AutoTradeExecutionResult['events'][0] } {
   // Guard checks
   if (!account.autoExecuteSignals) {
@@ -255,9 +257,143 @@ export function autoOpenPaperTradeOnSignal(
     return { updatedAccount: account, opened: false };
   }
 
+  const totalPortfolioValue = account.virtualBalanceUsd + account.allocatedCapitalUsd;
+
+  // 1. Portfolio Max Exposure Cap Guard (Default 50% max allocated capital)
+  const maxExposureCapPct = account.maxExposurePct ?? 50;
+  const currentExposurePct = (account.allocatedCapitalUsd / (totalPortfolioValue || 1)) * 100;
+  if (currentExposurePct >= maxExposureCapPct) {
+    return {
+      updatedAccount: account,
+      opened: false,
+      event: {
+        type: 'ENTRY',
+        asset,
+        price: livePrice,
+        pnlUsd: 0,
+        pnlPercent: 0,
+        messageAr: `🛡️ سقف التعرض الإجمالي (Max Exposure Cap): بلغت المحفظة نسبة استثمار ${currentExposurePct.toFixed(1)}% (الحد الأقصى ${maxExposureCapPct}%). تم حجب فتح صفقات جديدة للحفاظ على سيولة الحساب.`,
+        messageEn: `🛡️ Max Exposure Cap: Portfolio allocated at ${currentExposurePct.toFixed(1)}% (Max ${maxExposureCapPct}%). Entry blocked to preserve liquidity.`,
+        timestamp: Date.now(),
+      },
+    };
+  }
+
+  // 2. Correlation Matrix Guard: Prevent overlapping correlated crypto positions
+  if (account.correlationGuardEnabled !== false && asset !== 'PAXG') {
+    // Check if there is already an open position in another crypto asset
+    const activeCorrelatedCrypto = account.positions.find((p) => p.asset !== 'PAXG' && p.asset !== asset);
+    if (activeCorrelatedCrypto && aiSignal.convictionScore < 82) {
+      return {
+        updatedAccount: account,
+        opened: false,
+        event: {
+          type: 'ENTRY',
+          asset,
+          price: livePrice,
+          pnlUsd: 0,
+          pnlPercent: 0,
+          messageAr: `⚡ مصفوفة الارتباط (Correlation Guard): توجد صفقة نشطة في ${activeCorrelatedCrypto.asset}. يتطلب فتح ${asset} قوة قناعة استثنائية (≥82%، الحالية: ${aiSignal.convictionScore}%) لمنع مضاعفة مخاطر هبوط السوق الجماعي.`,
+          messageEn: `⚡ Correlation Guard: Active correlated crypto position (${activeCorrelatedCrypto.asset}). Requires ≥82% conviction (${aiSignal.convictionScore}%) to prevent systemic drawdown.`,
+          timestamp: Date.now(),
+        },
+      };
+    }
+  }
+
+  // 3. Derivatives Funding Squeeze Filter Guard
+  if (account.derivativesFilterEnabled !== false && derivativesData) {
+    if (derivativesData.sentiment === 'OVERHEATED_LONGS' || derivativesData.fundingRate > 0.035) {
+      return {
+        updatedAccount: account,
+        opened: false,
+        event: {
+          type: 'ENTRY',
+          asset,
+          price: livePrice,
+          pnlUsd: 0,
+          pnlPercent: 0,
+          messageAr: `🛑 فلتر المشتقات (Funding Squeeze Guard): معدل التمويل مرتفع جداً (${derivativesData.fundingRate}% / 8h) مما ينذر بتصفية عنيفة لعقود الشراء (Long Squeeze). تم تأجيل شراء ${asset}.`,
+          messageEn: `🛑 Derivatives Guard: Funding rate overheated (${derivativesData.fundingRate}%), Long Squeeze hazard. Delayed ${asset} entry.`,
+          timestamp: Date.now(),
+        },
+      };
+    }
+  }
+
+  // 4. Dynamic Bid-Ask Spread Filter Guard
+  const maxTolerance = account.maxSpreadTolerancePct || 0.15;
+  if (account.spreadFilterEnabled && spreadPercent !== undefined && spreadPercent > maxTolerance) {
+    return {
+      updatedAccount: account,
+      opened: false,
+      event: {
+        type: 'ENTRY',
+        asset,
+        price: livePrice,
+        pnlUsd: 0,
+        pnlPercent: 0,
+        messageAr: `🛡️ حماية الانزلاق: تم تأجيل تنفيذ ${asset} بسبب اتساع الفارق السعري (${spreadPercent.toFixed(3)}% > ${maxTolerance}%) لحماية رأس المال.`,
+        messageEn: `🛡️ Spread Guard: Delayed ${asset} entry due to wide spread (${spreadPercent.toFixed(3)}% > ${maxTolerance}%) to protect capital.`,
+        timestamp: Date.now(),
+      },
+    };
+  }
+
   // Check if position already open for this asset
   const existingPosition = account.positions.find((p) => p.asset === asset);
+
+  // 2. Dual-Tranche Mode: Add Tranche 2 to an existing Tranche 1 position on confirmation
   if (existingPosition) {
+    if (
+      account.trancheModeEnabled &&
+      existingPosition.trancheCount === 1 &&
+      aiSignal.convictionScore >= 75 &&
+      account.virtualBalanceUsd >= 20
+    ) {
+      // Calculate Tranche 2 addition (approx 40% of original target size)
+      const tranche2Usd = Number(Math.min(account.virtualBalanceUsd, existingPosition.allocatedUsd * 0.67).toFixed(2));
+      if (tranche2Usd >= 15) {
+        const tranche2Amount = tranche2Usd / livePrice;
+        const totalAmount = existingPosition.amount + tranche2Amount;
+        const totalInvested = Number((existingPosition.allocatedUsd + tranche2Usd).toFixed(2));
+        const blendedEntryPrice = Number((totalInvested / totalAmount).toFixed(2));
+
+        const updatedPosition: PaperPosition = {
+          ...existingPosition,
+          amount: totalAmount,
+          allocatedUsd: totalInvested,
+          entryPrice: blendedEntryPrice,
+          trancheCount: 2,
+          tranches: [
+            ...(existingPosition.tranches || [
+              { trancheNumber: 1, price: existingPosition.entryPrice, amount: existingPosition.amount, time: existingPosition.entryTime },
+            ]),
+            { trancheNumber: 2, price: livePrice, amount: tranche2Amount, time: Date.now() },
+          ],
+        };
+
+        const updatedAccount: PaperAccount = {
+          ...account,
+          virtualBalanceUsd: Number((account.virtualBalanceUsd - tranche2Usd).toFixed(2)),
+          allocatedCapitalUsd: Number((account.allocatedCapitalUsd + tranche2Usd).toFixed(2)),
+          positions: account.positions.map((p) => (p.id === existingPosition.id ? updatedPosition : p)),
+        };
+
+        const event: AutoTradeExecutionResult['events'][0] = {
+          type: 'ENTRY',
+          asset,
+          price: livePrice,
+          pnlUsd: 0,
+          pnlPercent: 0,
+          messageAr: `🎯 تعزيز الدخول المجزأ (Tranche 2): تم إضافة $${tranche2Usd.toLocaleString()} لصفقة ${asset}/USDT بمتوسط سعر جديد $${blendedEntryPrice.toLocaleString()}`,
+          messageEn: `🎯 Tranche 2 Confirmation: Added $${tranche2Usd.toLocaleString()} to ${asset}/USDT (Blended Entry: $${blendedEntryPrice.toLocaleString()})`,
+          timestamp: Date.now(),
+        };
+
+        return { updatedAccount, opened: true, event };
+      }
+    }
     return { updatedAccount: account, opened: false };
   }
 
@@ -273,8 +409,6 @@ export function autoOpenPaperTradeOnSignal(
   }
 
   // Dynamic Risk-Based Position Sizing: Maximum risk of 2% of Total Portfolio per trade
-  // Formula: Invested Amount = (Portfolio * MaxRiskPct) / (SL Risk Pct)
-  const totalPortfolioValue = account.virtualBalanceUsd + account.allocatedCapitalUsd;
   const targetRiskPct = 0.02; // 2% maximum portfolio risk at Stop Loss
   const maxRiskUsd = totalPortfolioValue * targetRiskPct;
 
@@ -288,7 +422,13 @@ export function autoOpenPaperTradeOnSignal(
   // Bound allocation between 10% and 30% of available cash
   const maxAllocationUsd = account.virtualBalanceUsd * 0.30;
   const minAllocationUsd = Math.min(account.virtualBalanceUsd, 25);
-  const investUsd = Number(Math.min(maxAllocationUsd, Math.max(minAllocationUsd, idealInvestUsd)).toFixed(2));
+  let investUsd = Number(Math.min(maxAllocationUsd, Math.max(minAllocationUsd, idealInvestUsd)).toFixed(2));
+
+  // If Tranche mode is active, Tranche 1 takes 60% of total allocation
+  const isTranche1 = Boolean(account.trancheModeEnabled);
+  if (isTranche1) {
+    investUsd = Number((investUsd * 0.60).toFixed(2));
+  }
 
   if (investUsd < 15 || account.virtualBalanceUsd < investUsd) {
     return { updatedAccount: account, opened: false };
@@ -315,6 +455,9 @@ export function autoOpenPaperTradeOnSignal(
     partialSold: false,
     highestPrice: livePrice,
     trailingStopPrice: Math.round(livePrice * 0.98),
+    trancheCount: isTranche1 ? 1 : undefined,
+    tranches: isTranche1 ? [{ trancheNumber: 1, price: livePrice, amount, time: Date.now() }] : undefined,
+    executionSpreadPct: spreadPercent,
   };
 
   const updatedAccount: PaperAccount = {
@@ -324,14 +467,17 @@ export function autoOpenPaperTradeOnSignal(
     positions: [newPosition, ...account.positions],
   };
 
+  const trancheLabelAr = isTranche1 ? ' (الدفعة 1 - Tranche 1 بنسبة 60%)' : '';
+  const trancheLabelEn = isTranche1 ? ' (Tranche 1 - 60% Initial Allocation)' : '';
+
   const event: AutoTradeExecutionResult['events'][0] = {
     type: 'ENTRY',
     asset,
     price: livePrice,
     pnlUsd: 0,
     pnlPercent: 0,
-    messageAr: `⚡ دخول تلقائي: فتح صفقة ${asset}/USDT بقيمة $${investUsd.toLocaleString()} بناءً على إشارة البوت الفورية (سعر الدخول: $${livePrice.toLocaleString()})`,
-    messageEn: `⚡ Auto Entry: Executed ${asset}/USDT paper position for $${investUsd.toLocaleString()} from live bot signal (Entry: $${livePrice.toLocaleString()})`,
+    messageAr: `⚡ دخول تلقائي: فتح صفقة ${asset}/USDT بقيمة $${investUsd.toLocaleString()}${trancheLabelAr} بناءً على إشارة البوت (سعر الدخول: $${livePrice.toLocaleString()})`,
+    messageEn: `⚡ Auto Entry: Executed ${asset}/USDT position for $${investUsd.toLocaleString()}${trancheLabelEn} (Entry: $${livePrice.toLocaleString()})`,
     timestamp: Date.now(),
   };
 

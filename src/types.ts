@@ -234,6 +234,61 @@ export interface LearningState {
   lastLearningCycle: number;
 }
 
+export interface GeminiSuccessPattern {
+  titleAr: string;
+  titleEn: string;
+  descriptionAr: string;
+  descriptionEn: string;
+  keyIndicators: string[];
+  occurrenceCount?: number;
+  impact: 'HIGH' | 'VERY_HIGH' | 'CRITICAL';
+}
+
+export interface GeminiErrorPattern {
+  titleAr: string;
+  titleEn: string;
+  descriptionAr: string;
+  descriptionEn: string;
+  rootCauseAr: string;
+  rootCauseEn: string;
+  severity: 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  frequencyPct?: number;
+}
+
+export interface GeminiLessonLearnedItem {
+  id: string;
+  category: 'TIMING' | 'STRATEGY' | 'RISK_MANAGEMENT' | 'EXECUTION';
+  lessonAr: string;
+  lessonEn: string;
+  actionRuleAr: string;
+  actionRuleEn: string;
+  priority: 'MUST_DO' | 'RECOMMENDED' | 'CRITICAL';
+}
+
+export interface GeminiLessonsLearnedAnalysis {
+  analyzedAt: number;
+  modelUsed: string;
+  totalTradesAnalyzed: number;
+  winRate: number;
+  totalPnlUsd: number;
+  successPatterns: GeminiSuccessPattern[];
+  errorPatterns: GeminiErrorPattern[];
+  lessonsLearned: GeminiLessonLearnedItem[];
+  executiveSummaryAr: string;
+  executiveSummaryEn: string;
+  recommendedRuleAdjustment: {
+    recommendedBannedHours: number[];
+    minConfidenceThreshold: number;
+    trailingStopAdjustmentPct: number;
+  };
+  recoverySimulation?: {
+    recoverableLossUsd: number;
+    potentialWinRate: number;
+    insightAr: string;
+    insightEn: string;
+  };
+}
+
 export interface BacktestParams {
   periodDays: number;
   initialCapital: number;
@@ -277,6 +332,12 @@ export interface BacktestResult {
   }>;
 }
 
+export interface TelegramAlertTiers {
+  urgentTrades: boolean;     // Entry / Exit / Stop-Loss / Take-Profit
+  positionUpdates: boolean;  // Trailing stop lock / Break-even
+  dailyDigest: boolean;      // Automated daily PnL & market recap
+}
+
 export interface AlertConfig {
   telegramToken: string;
   telegramChatId: string;
@@ -288,6 +349,7 @@ export interface AlertConfig {
   serverHasTelegramChatId?: boolean;
   maskedTelegramToken?: string;
   maskedTelegramChatId?: string;
+  telegramTiers?: TelegramAlertTiers;
 }
 
 export interface PaperPosition {
@@ -306,6 +368,10 @@ export interface PaperPosition {
   partialSold: boolean;
   highestPrice: number;
   trailingStopPrice?: number;
+  // Tranche Accumulation
+  trancheCount?: number;
+  tranches?: Array<{ trancheNumber: number; price: number; amount: number; time: number }>;
+  executionSpreadPct?: number;
 }
 
 export interface PaperAccount {
@@ -315,6 +381,60 @@ export interface PaperAccount {
   positions: PaperPosition[];
   tradeHistory: TradeRecord[];
   autoExecuteSignals: boolean;
+  // Institutional Execution Enhancements
+  trancheModeEnabled?: boolean;       // Dual-tranche entry (60% discount sweep + 40% breakout confirmation)
+  spreadFilterEnabled?: boolean;      // Reject or delay entry if spread > maxSpreadTolerancePct
+  maxSpreadTolerancePct?: number;     // Default 0.15%
+  lastSyncedAt?: number;              // Cloud sync timestamp with server SQLite
+  // Risk & Exposure Management
+  maxExposurePct?: number;            // Max total portfolio exposure cap (e.g. 50%)
+  correlationGuardEnabled?: boolean;  // Prevent overlapping correlated crypto longs
+  derivativesFilterEnabled?: boolean; // Block longs if funding rate is overheated
+  initialBalanceUsd?: number;         // Initial starting capital for benchmark
+  benchmarkStartTime?: number;        // Timestamp when benchmark tracking started
+  benchmarkStartBtcPrice?: number;    // Starting BTC price for benchmark
+}
+
+export interface DerivativesMetrics {
+  asset: SupportedAsset;
+  symbol: string;
+  fundingRate: number;              // e.g. 0.012%
+  annualizedFundingRate: number;    // annualized %
+  predictedFundingRate?: number;
+  nextFundingTime: number;
+  openInterestUsd: number;
+  openInterestChange24h: number;
+  longShortRatio: number;
+  sentiment: 'OVERHEATED_LONGS' | 'SHORT_SQUEEZE_RISK' | 'BALANCED' | 'NEUTRAL';
+  riskScore: number;                 // 0 to 100
+  source: string;
+  timestamp: number;
+}
+
+export interface BenchmarkMetrics {
+  botTotalReturnPct: number;
+  btcHodlReturnPct: number;
+  alphaPct: number;                 // Bot Return - BTC Return
+  beta: number;
+  botMaxDrawdownPct: number;
+  btcMaxDrawdownPct: number;
+  botSharpeRatio: number;
+  winRatePct: number;
+  profitFactor: number;
+}
+
+export interface MonteCarloSimulationResult {
+  simulationsRun: number;
+  projectedPeriods: number;
+  expectedFinalBalanceUsd: number;
+  p5WorstCaseUsd: number;
+  p50MedianUsd: number;
+  p95BestCaseUsd: number;
+  var95Usd: number;                 // 95% Value at Risk
+  expectedMaxDrawdownPct: number;
+  probabilityOfProfitPct: number;
+  sharpeRatio: number;
+  samplePaths: Array<{ step: number; balance: number }[]>;
 }
 
 export interface OrderBookLevel {
@@ -407,6 +527,51 @@ export interface BotLogRecord {
   type: 'INFO' | 'SIGNAL' | 'ALERT' | 'ERROR' | 'SECURITY' | 'WARN';
   message: string;
   asset?: string;
+}
+
+export interface SyncableBotConfig {
+  active: boolean;
+  telegramEnabled: boolean;
+  telegramToken: string;
+  telegramChatId: string;
+  scanIntervalSeconds: number;
+  spreadFilterEnabled: boolean;
+  maxSpreadPercent: number;
+  trancheModeEnabled: boolean;
+  tranche1Percent: number;
+  tranche2Percent: number;
+  maxExposurePercent?: number;
+  correlationGuardEnabled?: boolean;
+  derivativesFilterEnabled?: boolean;
+  telegramAlertTiers?: {
+    urgentTrades: boolean;
+    positionUpdates: boolean;
+    dailyDigest: boolean;
+  };
+  bannedTradingHours?: number[];
+  adaptiveRulesCount?: number;
+  paperAutoExecute?: boolean;
+}
+
+export interface ConfigChecksumReport {
+  localChecksum: string;
+  serverChecksum: string;
+  isMatch: boolean;
+  syncedAt: number;
+  syncAction: 'IN_SYNC' | 'SERVER_UPDATED' | 'LOCAL_HYDRATED' | 'SYNCING' | 'ERROR';
+  differences: string[];
+  details: {
+    telegramConfigured: boolean;
+    scanIntervalSeconds: number;
+    spreadFilterEnabled: boolean;
+    maxSpreadPercent: number;
+    trancheModeEnabled: boolean;
+    tranche1Percent: number;
+    tranche2Percent: number;
+    adaptiveRulesCount: number;
+    bannedHoursCount: number;
+    paperAutoExecute: boolean;
+  };
 }
 
 export interface BotSignalRecord {

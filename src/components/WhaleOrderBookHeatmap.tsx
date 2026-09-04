@@ -139,8 +139,33 @@ export const WhaleOrderBookHeatmap: React.FC<WhaleOrderBookHeatmapProps> = ({
         </span>
       </div>
 
-      {/* Liquidity Imbalance Bar */}
-      <div className="bg-[#0e0e0e] p-3 rounded border border-[#1f1f1f] space-y-2">
+      {/* Liquidity Imbalance Bar & Dynamic Spread Guard */}
+      <div className="bg-[#0e0e0e] p-3 rounded border border-[#1f1f1f] space-y-2.5">
+        {/* Dynamic Spread Metric */}
+        <div className="flex items-center justify-between text-xs pb-2 border-b border-[#1c1c1c] flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400 font-bold">{lang === 'ar' ? '🛡️ الفارق السعري اللحظي (Spread Guard):' : '🛡️ Live Bid-Ask Spread:'}</span>
+            <span className="text-white font-mono font-bold">
+              ${(depthData?.spreadUsd ?? 0.01).toFixed(2)} ({((depthData?.spreadPercent ?? 0.024)).toFixed(3)}%)
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
+              (depthData?.spreadPercent ?? 0.024) <= 0.05
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                : (depthData?.spreadPercent ?? 0.024) <= 0.15
+                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+            }`}>
+              {(depthData?.spreadPercent ?? 0.024) <= 0.05
+                ? (lang === 'ar' ? '🟢 انزلاق فائق الضيق (Optimal Slippage)' : '🟢 Ultra-Tight Spread')
+                : (depthData?.spreadPercent ?? 0.024) <= 0.15
+                ? (lang === 'ar' ? '🔵 انزلاق قياسي مقبول (Normal)' : '🔵 Normal Spread')
+                : (lang === 'ar' ? '🔴 انزلاق متسع (High Slippage Risk)' : '🔴 High Slippage')}
+            </span>
+          </div>
+        </div>
+
         <div className="flex items-center justify-between text-xs">
           <span className="text-emerald-400 font-bold flex items-center gap-1">
             <TrendingUp className="w-3.5 h-3.5" />
