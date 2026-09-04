@@ -81,13 +81,13 @@ export const MacroEconomicFilter: React.FC<MacroEconomicFilterProps> = ({
                   ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse' 
                   : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
               }`}>
-                {isBlackout ? '⚠️ ACTIVE BLACKOUT' : '🛡️ NORMAL TRADING'}
+                {isBlackout ? '⚠️ ACTIVE BLACKOUT' : '🛡️ NORMAL SIMULATION'}
               </span>
             </div>
             <p className="text-xs text-gray-400 font-sans">
               {lang === 'ar' 
-                ? 'إيقاف فتح صفقات جديدة قبل صدور القرارات الكبرى بـ ساعتين لحماية رأس المال من التصفية' 
-                : 'Automated 2-hour blackout window around major US economic releases to avoid chop'}
+                ? 'إيقاف تتبع إشارات جديدة قبل صدور القرارات الكبرى بـ ساعتين لتجنب الضوضاء' 
+                : 'Automated 2-hour blackout window around major US economic releases to avoid noise'}
             </p>
           </div>
         </div>
@@ -119,11 +119,11 @@ export const MacroEconomicFilter: React.FC<MacroEconomicFilterProps> = ({
             <span className="font-bold block">
               {isBlackout
                 ? (lang === 'ar'
-                    ? '⚠️ وضع الحماية مفعل (Trade Lock Active): تم إيقاف صفقات الشراء مؤقتاً'
-                    : '⚠️ Blackout Mode Active: New trade execution locked')
+                    ? '⚠️ وضع الحماية مفعل: تم إيقاف محاكاة الشراء مؤقتاً'
+                    : '⚠️ Blackout Mode Active: New tracking execution locked')
                 : (lang === 'ar'
-                    ? '✅ وضع التداول آمن: لا توجد أحداث تضخم أو فائدة خلال الساعتين القادمتين'
-                    : '✅ Safe Trading Window: No high-impact events within the 2-hour buffer')}
+                    ? '✅ وضع المحاكاة آمن: لا توجد أحداث تضخم أو فائدة خلال الساعتين القادمتين'
+                    : '✅ Safe Tracking Window: No high-impact events within the 2-hour buffer')}
             </span>
             {macroStatus?.lockReasonAr && isBlackout && (
               <span className="text-[11px] text-rose-300 font-sans block mt-0.5">

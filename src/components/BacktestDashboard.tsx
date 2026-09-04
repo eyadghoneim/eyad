@@ -234,7 +234,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
         
         {/* Total Return % */}
         <div className="bg-[#0c0c0c] p-3 rounded border border-green-500/30 relative overflow-hidden">
-          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'عائد البوت السنوي' : 'Bot Total Return'}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'العائد النظري للمحاكاة' : 'Simulated Return'}</div>
           <div className="text-lg sm:text-xl font-bold text-green-400 mt-0.5">
             +{backtestResult.totalReturnPercent}%
           </div>
@@ -258,7 +258,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
 
         {/* Win Rate */}
         <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
-          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'نسبة الصفقات الرابحة' : 'Win Rate'}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'نسبة دقة التتبع' : 'Tracking Accuracy'}</div>
           <div className="text-lg sm:text-xl font-bold text-green-400 mt-0.5">
             {backtestResult.winRate}%
           </div>
@@ -269,37 +269,36 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
 
         {/* Profit Factor */}
         <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
-          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'معامل الربحية' : 'Profit Factor'}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'معامل الكفاءة النظرية' : 'Efficiency Factor'}</div>
           <div className="text-lg sm:text-xl font-bold text-cyan-400 mt-0.5">
             {backtestResult.profitFactor}
           </div>
           <div className="text-[10px] text-cyan-500 mt-0.5 font-sans">
-            {lang === 'ar' ? 'مستوى مؤسسي (> 2.0)' : 'Institutional'}
+            {lang === 'ar' ? 'مستوى الأبحاث' : 'Research Level'}
           </div>
         </div>
 
         {/* Max Drawdown */}
         <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
-          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'أقصى تراجع' : 'Max Drawdown'}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'أقصى تراجع نظري' : 'Theoretical Drawdown'}</div>
           <div className="text-lg sm:text-xl font-bold text-red-400 mt-0.5">
             -{backtestResult.maxDrawdownPercent}%
           </div>
           <div className="text-[10px] text-gray-500 mt-0.5 font-sans">
-            {lang === 'ar' ? 'حماية رأس المال' : 'Loss Shield'}
+            {lang === 'ar' ? 'محاكاة الهبوط' : 'Simulated Drops'}
           </div>
         </div>
 
         {/* Total Trades & Sharpe */}
         <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
-          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'معدل شارب والصفقات' : 'Sharpe / Trades'}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-sans">{lang === 'ar' ? 'معدل شارب والإشارات' : 'Sharpe / Signals'}</div>
           <div className="text-lg sm:text-xl font-bold text-blue-400 mt-0.5">
             {backtestResult.sharpeRatio}
           </div>
           <div className="text-[10px] text-gray-400 mt-0.5">
-            {backtestResult.totalTrades} {lang === 'ar' ? 'صفقة' : 'Trades'}
+            {backtestResult.totalTrades} {lang === 'ar' ? 'إشارة' : 'Signals'}
           </div>
         </div>
-
       </div>
 
       {/* Interactive Controls & Strategy Tuning Parameters */}
@@ -348,7 +347,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
           {/* Take Profit Target % */}
           <div>
             <div className="flex justify-between text-gray-400 mb-1">
-              <span>{lang === 'ar' ? 'هدف جني الأرباح (TP %)' : 'Take Profit %'}</span>
+              <span>{lang === 'ar' ? 'هدف النجاح المرجعي (Target %)' : 'Reference Target %'}</span>
               <span className="text-green-400 font-bold">+{params.takeProfitPercent}%</span>
             </div>
             <input
@@ -446,7 +445,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
               activeView === 'trades' ? 'bg-blue-600 text-white shadow-sm border border-blue-400/40' : 'text-gray-400 hover:text-white hover:bg-[#141414] border border-transparent'
             }`}
           >
-            {lang === 'ar' ? 'سجل الصفقات التاريخية' : 'Historical Trades Journal'} ({backtestResult.trades.length})
+            {lang === 'ar' ? 'سجل المحاكاة التاريخية' : 'Historical Tracking Journal'} ({backtestResult.trades.length})
           </button>
         </div>
 
@@ -457,7 +456,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5">
                   <span className="w-3 h-1 bg-green-400 rounded-full inline-block" />
-                  <span className="text-green-400 font-semibold">{lang === 'ar' ? 'محفظة البوت' : 'Bot Equity'}</span>
+                  <span className="text-green-400 font-semibold">{lang === 'ar' ? 'نمو المحاكاة' : 'Simulation Equity'}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-3 h-1 bg-gray-500 rounded-full inline-block" />
@@ -529,7 +528,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
                   {m.returnPercent >= 0 ? '+' : ''}{m.returnPercent}%
                 </div>
                 <div className="text-[9px] text-gray-500 mt-0.5">
-                  {m.tradesCount} {lang === 'ar' ? 'صفقات' : 'trades'} • {m.winRate}% WR
+                  {m.tradesCount} {lang === 'ar' ? 'إشارة' : 'signals'} • {m.winRate}% WR
                 </div>
               </div>
             ))}
@@ -576,7 +575,7 @@ export const BacktestDashboard: React.FC<BacktestDashboardProps> = ({
                         {isWin ? (
                           <span className="text-green-400 flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3 shrink-0" />
-                            {lang === 'ar' ? 'تحقيق هدف جني الأرباح' : 'Take Profit Hit'}
+                            {lang === 'ar' ? 'وصول للهدف المرجعي' : 'Target Reached'}
                           </span>
                         ) : (
                           <span className="text-red-400 flex items-center gap-1">

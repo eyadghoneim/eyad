@@ -124,8 +124,8 @@ export const ChecksumSyncBadge: React.FC<ChecksumSyncBadgeProps> = ({
                         ? 'تم رصد اختلاف عند بدء التشغيل وتم تحديث السيرفر فوراً لضمان التطابق التام ⚡'
                         : 'Discrepancy detected on load and resolved: Server updated instantly to match client!')
                     : (lang === 'ar'
-                        ? 'جميع الإعدادات متطابقة بنسبة 100% بين واجهة الموقع وبوت التداول 🟢'
-                        : '100% Parameter parity verified between frontend and trading bot 🟢')}
+                        ? 'جميع الإعدادات متطابقة بنسبة 100% بين واجهة الموقع وبوت المحاكاة 🟢'
+                        : '100% Parameter parity verified between frontend and research bot 🟢')}
                 </span>
               </div>
             </div>

@@ -148,14 +148,14 @@ export const SelfLearningJournal: React.FC<SelfLearningJournalProps> = ({
           <div className="p-2.5 rounded bg-yellow-950/20 border border-yellow-500/30 text-xs text-yellow-300 flex items-start gap-2">
             <AlertTriangle className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-0.5" />
             <div>
-              <strong className="text-yellow-200">{lang === 'ar' ? 'الساعات المحظورة آلياً بواسطة نظام التعلم: ' : 'AI Throttled Trading Hours: '}</strong>
+              <strong className="text-yellow-200">{lang === 'ar' ? 'الساعات المحظورة آلياً بواسطة نظام التعلم: ' : 'AI Throttled Simulation Hours: '}</strong>
               <span>
                 {learningState.bannedTradingHours.map((h) => `${h}:00 UTC`).join(' و ')}
               </span>
               <p className="text-[10px] text-yellow-400/80 mt-0.5 font-sans">
                 {lang === 'ar'
-                  ? 'تم استنتاج أن هذه الأوقات تتزامن مع تذبذب عنيف وافتتاح جلسات تداول عالية المخاطر تؤدي إلى اختراقات وهمية، لذلك يمنع البوت فتح صفقات سبوت جديدة فيها.'
-                  : 'Isolated as high-volatility session opens with frequent false breakouts. Spot entries throttled.'}
+                  ? 'تم استنتاج أن هذه الأوقات تتزامن مع تذبذب عنيف وافتتاح جلسات تداول عالية المخاطر تؤدي إلى اختراقات وهمية، لذلك يمنع المحاكي تتبع أي إشارات فيها.'
+                  : 'Isolated as high-volatility session opens with frequent false breakouts. Signal simulation throttled.'}
               </p>
             </div>
           </div>

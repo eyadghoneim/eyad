@@ -78,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-base sm:text-lg font-bold tracking-tight text-white font-mono flex items-center gap-1.5">
-                  EYAD Trading
+                  EYAD Research
                 </span>
                 {marketSource.includes('Binance') ? (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-500/40">

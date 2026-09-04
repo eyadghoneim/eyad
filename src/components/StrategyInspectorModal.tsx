@@ -45,7 +45,7 @@ export function StrategyInspectorModal({ isOpen, onClose, lang }: StrategyInspec
 
   const rawStrategyCode = `/**
  * ══════════════════════════════════════════════════════════════
- * 🤖 EYAD Trading — Multi-Asset Trading Strategy
+ * 🤖 EYAD Research — Multi-Asset Research Strategy
  * ══════════════════════════════════════════════════════════════
  * 
  * ده ملف الاستراتيجية الكامل — كل قواعد التداول في مكان واحد
@@ -153,11 +153,11 @@ export {
             </div>
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <span>🤖 EYAD BTC — Trading Strategy</span>
+                <span>🤖 EYAD BTC — Research Strategy</span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Single File</span>
               </h2>
               <p className="text-xs text-slate-400">
-                {lang === 'ar' ? 'ملف الاستراتيجية الموحد — جميع قواعد التداول وإدارة المخاطر في مكان واحد' : 'Unified Strategy Specification — All trading rules and risk management in one place'}
+                {lang === 'ar' ? 'ملف الاستراتيجية الموحد — جميع قواعد التحليل في مكان واحد' : 'Unified Strategy Specification — All analysis rules in one place'}
               </p>
             </div>
           </div>
@@ -205,7 +205,7 @@ export {
             }`}
           >
             <TrendingUp className="w-3.5 h-3.5" />
-            <span>{lang === 'ar' ? 'الأداء المتوقع والأصول' : 'Assets & Performance'}</span>
+            <span>{lang === 'ar' ? 'نتائج المحاكاة والأصول' : 'Assets & Simulation'}</span>
           </button>
 
           <button
@@ -231,8 +231,8 @@ export {
                 <Sparkles className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-amber-200/90 leading-relaxed">
                   {lang === 'ar' 
-                    ? 'القواعد الذهبية هي الدستور الصارم لبوت التداول السبوت. لا يتم فتح أو إدارة أي صفقة إلا بالامتثال الحرفي لهذه القواعد لمنع الخسائر وحماية رأس المال.'
-                    : 'The 10 Golden Rules represent the strict constitution of EYAD.BOT Spot trading engine. Zero trades violate these mandates.'}
+                    ? 'القواعد الذهبية هي الدستور الصارم لمحرك المحاكاة. لا يتم رصد أي سيناريو إلا بالامتثال الحرفي لهذه القواعد.'
+                    : 'The 10 Golden Rules represent the strict constitution of EYAD.BOT simulation engine.'}
                 </div>
               </div>
 
@@ -358,22 +358,22 @@ export {
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-bold text-white">{assetKey} Spot</span>
-                      <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">
-                        {stats.return} Expected
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-rose-950/40 text-rose-300 font-bold border border-rose-500/30">
+                        {stats.return}
                       </span>
                     </div>
                     <div className="space-y-1.5 text-xs text-slate-300">
                       <div className="flex justify-between">
                         <span className="text-slate-400">{lang === 'ar' ? 'نسبة الفوز:' : 'Win Rate:'}</span>
-                        <span className="font-bold text-emerald-400">{stats.winRate}</span>
+                        <span className="font-bold text-slate-500">{stats.winRate}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">{lang === 'ar' ? 'متوسط مدة الصفقة:' : 'Avg Duration:'}</span>
-                        <span className="font-bold text-slate-200">{stats.avgDuration}</span>
+                        <span className="font-bold text-slate-500">{stats.avgDuration}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">{lang === 'ar' ? 'معامل شارب:' : 'Sharpe Ratio:'}</span>
-                        <span className="font-bold text-cyan-400">{stats.sharpe}</span>
+                        <span className="font-bold text-slate-500">{stats.sharpe}</span>
                       </div>
                     </div>
                   </div>

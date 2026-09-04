@@ -226,11 +226,11 @@ export function analyzeElliottWave(candles: Candle[]): ElliottWaveAnalysis {
         if (currentPrice >= s3.price * 0.97 && rule2Passed) {
           currentWave = 'WAVE_3';
           waveType = 'IMPULSE';
-          invalidationPrice = s1.price;
+          invalidationPrice = s2.price; // Wave 3 stop at Wave 2 trough, not Wave 1 peak
           estimatedTarget = s2.price + wave1Len * 1.618;
           confidence = 55;
         } else {
-          // Pulling back from Wave 3 peak into developing Wave 4
+          // Pulling back from Wave 3 peak into developing Wave 4 (no trough 4 yet)
           currentWave = 'WAVE_4';
           waveType = 'CORRECTIVE';
           invalidationPrice = s1.price; // Wave 4 must not enter Wave 1
@@ -319,9 +319,6 @@ export function analyzeElliottWave(candles: Candle[]): ElliottWaveAnalysis {
   // Deduct heavily for rule violations
   if (rulesViolated.length > 0) {
     confidence -= rulesViolated.length * 10;
-    if (currentWave === 'WAVE_3' || currentWave === 'WAVE_5') {
-      currentWave = 'UNDEFINED';
-    }
   }
 
   // Bounded strictly between 20% and 70%

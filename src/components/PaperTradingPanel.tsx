@@ -397,7 +397,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
 
         <div className="bg-[#0e0e0e] p-2.5 rounded border border-[#1f1f1f]">
           <span className="text-[11px] text-gray-400 block mb-1">
-            {lang === 'ar' ? 'إجمالي القيمة (Equity)' : 'Total Equity'}
+            {lang === 'ar' ? 'إجمالي القيمة الافتراضية' : 'Total Equity'}
           </span>
           <div className="flex items-center gap-1.5">
             <span className="text-base font-bold text-emerald-400">
@@ -411,7 +411,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
 
         <div className="bg-[#0e0e0e] p-2.5 rounded border border-[#1f1f1f]">
           <span className="text-[11px] text-gray-400 block mb-1">
-            {lang === 'ar' ? 'الأرباح المحققة (Realized)' : 'Realized PnL'}
+            {lang === 'ar' ? 'الأرباح المحققة نظريًا' : 'Realized PnL'}
           </span>
           <span className={`text-base font-bold ${paperAccount.totalRealizedPnlUsd >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
             {paperAccount.totalRealizedPnlUsd >= 0 ? '+' : ''}${paperAccount.totalRealizedPnlUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -420,11 +420,11 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
 
         <div className="bg-[#0e0e0e] p-2.5 rounded border border-[#1f1f1f]">
           <span className="text-[11px] text-gray-400 block mb-1">
-            {lang === 'ar' ? 'نسبة الفوز والصفقات' : 'Win Rate / Trades'}
+            {lang === 'ar' ? 'نسبة نجاح المحاكاة' : 'Win Rate / Tracking'}
           </span>
           <div className="flex items-center gap-2">
             <span className="text-base font-bold text-blue-400">{winRate}%</span>
-            <span className="text-[11px] text-gray-400">({paperAccount.tradeHistory.length} {lang === 'ar' ? 'صفقة' : 'trades'})</span>
+            <span className="text-[11px] text-gray-400">({paperAccount.tradeHistory.length} {lang === 'ar' ? 'إشارة' : 'signals'})</span>
           </div>
         </div>
       </div>
@@ -436,7 +436,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
             <Play className="w-4 h-4 text-emerald-400" />
             <span className="font-bold text-xs text-white">
               {lang === 'ar' 
-                ? `فتح يدوي إضافي على إشارة ${currentAsset} الحالية:` 
+                ? `تشغيل محاكاة إضافية على إشارة ${currentAsset}:` 
                 : `Manual Launch on ${currentAsset} Signal:`}
             </span>
             <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/20 text-blue-400">
@@ -446,7 +446,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
 
           {/* Allocation size selector */}
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-400">{lang === 'ar' ? 'حجم الدخول:' : 'Size:'}</span>
+            <span className="text-xs text-gray-400">{lang === 'ar' ? 'حجم التعرض:' : 'Size:'}</span>
             {[25, 50, 100].map(pct => (
               <button
                 key={pct}
@@ -490,7 +490,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-white flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5 text-blue-400" />
-            {lang === 'ar' ? 'الصفقات المفتوحة المُدارة آلياً:' : 'Auto-Managed Active Positions:'}
+            {lang === 'ar' ? 'حالات المحاكاة النشطة:' : 'Active Simulation Trackers:'}
             <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-500/20 text-blue-400">
               {paperAccount.positions.length}
             </span>
@@ -504,13 +504,13 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
           <div className="bg-[#090909] p-4 rounded border border-[#1c1c1c] text-center text-xs text-gray-400 space-y-1">
             <p className="font-bold text-gray-300">
               {lang === 'ar' 
-                ? 'لا توجد صفقات مفتوحة حالياً.' 
-                : 'No open positions right now.'}
+                ? 'لا توجد حالات محاكاة نشطة حالياً.' 
+                : 'No active simulations right now.'}
             </p>
             <p className="text-[11px] text-gray-500">
               {lang === 'ar'
-                ? 'بمجرد صدور إشارة شراء جديدة من البوت، سيتم فتح الصفقة وإدارتها تلقائياً دون أي تدخل منك.'
-                : 'When a valid Buy signal is detected, the bot will auto-execute and manage the trade automatically.'}
+                ? 'بمجرد صدور إشارة شراء جديدة، سيتم بدء تتبع المحاكاة تلقائياً.'
+                : 'When a valid Buy signal is detected, the engine will start tracking it automatically.'}
             </p>
           </div>
         ) : (
@@ -630,7 +630,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span className="text-xs font-bold text-white flex items-center gap-1.5">
               <History className="w-3.5 h-3.5 text-purple-400" />
-              {lang === 'ar' ? 'سجل الصفقات المنجزة والنتائج المحققة:' : 'Executed Trades & Realized Results:'}
+              {lang === 'ar' ? 'سجل المحاكاة والنتائج الوهمية:' : 'Executed Tracking & Simulated Results:'}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -639,10 +639,10 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
                 className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-950/50 hover:bg-purple-900/60 text-purple-300 border border-purple-500/30 flex items-center gap-1 transition-all cursor-pointer"
               >
                 <Wand2 className="w-3 h-3" />
-                <span>{lang === 'ar' ? 'تصحيح وتنظيف الصفقات الخاطئة' : 'Auto Clean Glitches'}</span>
+                <span>{lang === 'ar' ? 'تصحيح وتنظيف المحاكاة' : 'Auto Clean Glitches'}</span>
               </button>
               <span className="text-[11px] text-gray-500">
-                {paperAccount.tradeHistory.length} {lang === 'ar' ? 'صفقات منتهية' : 'executed trades'}
+                {paperAccount.tradeHistory.length} {lang === 'ar' ? 'إشارات منتهية' : 'completed signals'}
               </span>
             </div>
           </div>

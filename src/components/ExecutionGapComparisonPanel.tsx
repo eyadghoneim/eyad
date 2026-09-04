@@ -75,12 +75,12 @@ export const ExecutionGapComparisonPanel: React.FC<ExecutionGapComparisonPanelPr
       .filter((t) => (assetFilter === 'ALL' ? true : t.asset === assetFilter || !t.asset))
       .slice(-15);
 
-    // 2. Gather actual paper/executed trades
+    // 2. Gather actual paper/executed signals
     const actualTrades = paperTrades.filter((t) =>
       assetFilter === 'ALL' ? true : t.asset === assetFilter
     );
 
-    // Base fallback realistic benchmarks if user's trade history is brand new
+    // Base fallback realistic benchmarks if user's signal history is brand new
     const basePrices: Record<SupportedAsset, number> = {
       BTC: 78500,
       ETH: 2420,
@@ -169,7 +169,7 @@ export const ExecutionGapComparisonPanel: React.FC<ExecutionGapComparisonPanelPr
           latencySeconds,
           status: actualPnlPct >= 0 ? 'WIN' : 'LOSS',
           executionGrade,
-          exitReason: bt.confluenceReason || (backtestPnlPct >= 0 ? 'Take Profit 1 Hit' : 'Stop Loss'),
+          exitReason: bt.confluenceReason || (backtestPnlPct >= 0 ? 'Target 1 Hit' : 'Stop Loss'),
         });
       });
     } else {
@@ -323,14 +323,14 @@ export const ExecutionGapComparisonPanel: React.FC<ExecutionGapComparisonPanelPr
               </span>
               <h3 className="text-base font-bold text-white font-mono">
                 {lang === 'ar'
-                  ? 'مقارنة الأداء الفعلي مقابل الباك تيست الافتراضي (Execution Gap Analysis)'
-                  : 'Live Execution vs. Backtest Benchmark Analysis'}
+                  ? 'مقارنة المحاكاة الحية مقابل الباك تيست الافتراضي (Execution Gap Analysis)'
+                  : 'Live Simulation vs. Backtest Benchmark Analysis'}
               </h3>
             </div>
             <p className="text-xs text-gray-400">
               {lang === 'ar'
-                ? 'قياس فجوة الانزلاق السعري (Slippage)، وتأخير الأوامر، ودراسة الفارق بين الربح النظري والربح المحقق فعلياً'
-                : 'Auditing slippage gaps, order execution latency, and delta between theoretical backtest and real fills'}
+                ? 'قياس فجوة الانزلاق السعري النظري، وتأخير الأوامر، ودراسة الفارق بين الربح الافتراضي والمحاكى فعلياً'
+                : 'Auditing slippage gaps, execution latency, and delta between theoretical backtest and real-time simulation'}
             </p>
           </div>
 
@@ -527,8 +527,8 @@ export const ExecutionGapComparisonPanel: React.FC<ExecutionGapComparisonPanelPr
             <div className="mb-3 text-xs text-gray-400 flex items-center justify-between">
               <span>
                 {lang === 'ar'
-                  ? 'مقارنة نمو رأس المال التراكمي: المنحنى الأخضر يمثل الباك تيست النظري، والأزرق يمثل التنفيذ الفعلي.'
-                  : 'Cumulative profit growth: Emerald curve is theoretical backtest, Blue curve is actual executed trades.'}
+                  ? 'مقارنة نمو رأس المال التراكمي: المنحنى الأخضر يمثل الباك تيست النظري، والأزرق يمثل المحاكاة الفعلية.'
+                  : 'Cumulative profit growth: Emerald curve is theoretical backtest, Blue curve is actual executed signals.'}
               </span>
               <span className="font-mono text-[11px] text-amber-300">
                 {lang === 'ar' ? 'فجوة تراكمية: ' : 'Net Drift: '}
@@ -558,7 +558,7 @@ export const ExecutionGapComparisonPanel: React.FC<ExecutionGapComparisonPanelPr
                       `${value}%`,
                       name === 'backtestCumulative'
                         ? (lang === 'ar' ? 'باك تيست نظري' : 'Theoretical Backtest')
-                        : (lang === 'ar' ? 'تنفيذ فعلي محقق' : 'Actual Live Fill'),
+                        : (lang === 'ar' ? 'محاكاة فعلية' : 'Actual Live Fill'),
                     ]}
                   />
                   <Legend
@@ -567,7 +567,7 @@ export const ExecutionGapComparisonPanel: React.FC<ExecutionGapComparisonPanelPr
                     formatter={(value) =>
                       value === 'backtestCumulative'
                         ? (lang === 'ar' ? 'الباك تيست الافتراضي (Theoretical)' : 'Virtual Backtest')
-                        : (lang === 'ar' ? 'التنفيذ الفعلي للبوت (Actual Execution)' : 'Actual Executed Trades')
+                        : (lang === 'ar' ? 'المحاكاة الفعلية (Actual Simulation)' : 'Actual Executed Signals')
                     }
                   />
                   <ReferenceLine y={0} stroke="#444" />

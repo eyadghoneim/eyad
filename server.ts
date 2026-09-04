@@ -106,7 +106,10 @@ function extractAdminToken(req: Request) {
 }
 
 function requireBotAdmin(req: Request, res: any, next: NextFunction) {
-  if (!BOT_ADMIN_TOKEN) return next();
+  if (!BOT_ADMIN_TOKEN) {
+    persistSecurityLog('SECURITY', `Unauthorized request blocked: No admin token configured on server for ${req.method} ${req.path}`);
+    return res.status(401).json({ success: false, error: 'Unauthorized: Bot admin token not configured' });
+  }
   if (extractAdminToken(req) === BOT_ADMIN_TOKEN) return next();
   persistSecurityLog('SECURITY', `Unauthorized request blocked for ${req.method} ${req.path}`);
   return res.status(401).json({ success: false, error: 'Unauthorized bot admin request' });

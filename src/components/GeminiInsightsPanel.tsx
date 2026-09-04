@@ -119,7 +119,7 @@ export const GeminiInsightsPanel: React.FC<GeminiInsightsPanelProps> = ({
 
   const handleCopyReport = () => {
     if (!insights) return;
-    const reportText = `🧠 [EYAD Trading - Gemini Flash 3.8 Actionable Insights Report]
+    const reportText = `🧠 [EYAD Research - Gemini Flash Actionable Insights Report]
 📌 Asset: ${insights.asset} | Quality Score: ${insights.overallQualityScore}/100
 🤖 Model: ${insights.modelUsed}
 ⏰ Generated: ${new Date(insights.timestamp).toLocaleString()}

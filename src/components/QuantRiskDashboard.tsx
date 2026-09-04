@@ -617,7 +617,7 @@ export const QuantRiskDashboard: React.FC<QuantRiskDashboardProps> = ({
                 </div>
 
                 <div className="bg-[#121212] p-3 rounded-lg border border-[#222] space-y-1">
-                  <div className="text-gray-500">{lang === 'ar' ? 'احتمالية الربحية الإحصائية' : 'Probability of Profit'}</div>
+                  <div className="text-gray-500">{lang === 'ar' ? 'احتمالية نجاح المحاكاة' : 'Probability of Success'}</div>
                   <div className="text-base font-bold font-mono text-purple-300">
                     {simulations.probabilityOfProfitPct}%
                   </div>

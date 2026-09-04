@@ -45,8 +45,8 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
         const permission = await Notification.requestPermission();
         setBrowserPermission(permission);
         if (permission === 'granted') {
-          new Notification('🤖 EYAD Trading Bot', {
-            body: lang === 'ar' ? 'تم تفعيل إشعارات المتصفح وسطح المكتب بنجاح! ستصلك إشارات التداول الحية هنا.' : 'Browser Push Notifications enabled successfully!',
+          new Notification('🤖 EYAD Research Bot', {
+            body: lang === 'ar' ? 'تم تفعيل إشعارات المتصفح وسطح المكتب بنجاح! ستصلك إشارات المحاكاة هنا.' : 'Browser Push Notifications enabled successfully!',
           });
           setTestResult({ success: true, message: lang === 'ar' ? 'تم تفعيل إشعارات المتصفح وسطح المكتب بنجاح!' : 'Browser Push Notifications granted!' });
         } else {
@@ -271,7 +271,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
                     }
                     className="accent-rose-500 rounded"
                   />
-                  <span className="text-rose-300 font-semibold">{lang === 'ar' ? '🚨 صفقات فورية' : '🚨 Urgent'}</span>
+                  <span className="text-rose-300 font-semibold">{lang === 'ar' ? '🚨 إشارات فورية' : '🚨 Urgent'}</span>
                 </label>
 
                 <label className="flex items-center gap-1.5 cursor-pointer bg-[#0e0e0e] p-1.5 rounded border border-[#1c1c1c]">

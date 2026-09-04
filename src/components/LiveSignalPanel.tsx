@@ -154,7 +154,7 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
         {/* Right: Conviction Gauge & AI Refresh */}
         <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
           <div className="hidden sm:flex items-center gap-2 text-[10px] font-mono text-gray-400 bg-[#141414] px-2.5 py-1 rounded border border-[#222]">
-            <span>EYAD Trading Strategy:</span>
+            <span>EYAD Research Strategy:</span>
             <span className="text-emerald-400 font-bold">ACTIVE</span>
             <span>•</span>
             <span>8 Protection Layers:</span>

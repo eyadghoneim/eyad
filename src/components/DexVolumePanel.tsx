@@ -61,7 +61,7 @@ export const DexVolumePanel: React.FC<DexVolumePanelProps> = ({ lang }) => {
         <div>
           <div className="text-[11px] uppercase font-mono text-gray-500">On-chain volume</div>
           <h3 className="text-white font-bold text-sm sm:text-base flex items-center gap-2"><Waves className="w-4 h-4 text-blue-400" />{lang === 'ar' ? 'نبض أحجام DEX' : 'DEX Volume Pulse'}</h3>
-          <p className="text-xs text-gray-400 mt-1">{lang === 'ar' ? 'طبقة تأكيد لنشاط السيولة والتداول اللامركزي عبر أكبر المنصات.' : 'A confirmation layer for decentralized trading activity and liquidity rotation.'}</p>
+          <p className="text-xs text-gray-400 mt-1">{lang === 'ar' ? 'طبقة تأكيد لنشاط السيولة اللامركزي عبر أكبر المنصات.' : 'A confirmation layer for decentralized activity and liquidity rotation.'}</p>
         </div>
         <button onClick={refresh} className="px-3 py-2 rounded-lg border border-[#2a2a2a] bg-[#111114] hover:bg-[#17171b] text-xs text-gray-100 flex items-center gap-2 font-mono"><RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />{lang === 'ar' ? 'تحديث' : 'Refresh'}</button>
       </div>

@@ -55,9 +55,9 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     const score = aiSignal?.convictionScore || 88;
 
     if (lang === 'ar') {
-      return `مرحباً بك في نظام إياد بوت للتداول المؤسسي. التحليل المباشر لـ ${assetNameAr}. السعر الحالي هو ${btcPrice.toLocaleString()} دولار. حالة الإشارة شراء سبوت مع نسبة ثقة ${score} بالمئة. سعر الدخول المعتمد ${entry.toLocaleString()} دولار. الهدف الأول لجني الأرباح عند ${tp1.toLocaleString()} دولار لبيع خمسين بالمئة من الكمية. الهدف الثاني عند ${tp2.toLocaleString()} دولار. مع تطبيق وقف خسارة صارم عند ${sl.toLocaleString()} دولار، وتفعيل الوقف المتحرك اثنين بالمئة بعد الهدف الأول لحماية الأرباح.`;
+      return `مرحباً بك في نظام إياد بوت للمحاكاة والتحليل. التحليل المباشر لـ ${assetNameAr}. السعر الحالي هو ${btcPrice.toLocaleString()} دولار. حالة الإشارة محاكاة شراء مع نسبة ثقة ${score} بالمئة. سعر الدخول المعتمد ${entry.toLocaleString()} دولار. الهدف المرجعي الأول عند ${tp1.toLocaleString()} دولار. الهدف الثاني عند ${tp2.toLocaleString()} دولار. مع تطبيق وقف نظري عند ${sl.toLocaleString()} دولار، وتتبع آلي بعد الهدف الأول.`;
     } else {
-      return `Welcome to EYAD Trading Bot. Live analysis for ${currentAsset}. Current price is ${btcPrice.toLocaleString()} dollars. Signal state is Strong Spot Buy with ${score}% conviction. Entry target at ${entry.toLocaleString()} dollars. Take profit 1 at ${tp1.toLocaleString()} dollars for 50% partial exit. Stop loss strictly placed at ${sl.toLocaleString()} dollars with 2% trailing protection.`;
+      return `Welcome to EYAD Research Bot. Live analysis for ${currentAsset}. Current price is ${btcPrice.toLocaleString()} dollars. Signal state is Simulated Buy with ${score}% conviction. Entry target at ${entry.toLocaleString()} dollars. Reference target 1 at ${tp1.toLocaleString()} dollars. Stop limit theoretically placed at ${sl.toLocaleString()} dollars with 2% trailing protection.`;
     }
   };
 
@@ -128,12 +128,12 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </div>
           <div>
             <h3 className="text-lg font-bold font-mono text-white flex items-center gap-2">
-              {lang === 'ar' ? 'المساعد الصوتي الذكي (AI Voice Briefing)' : 'AI Voice Trading Assistant'}
+              {lang === 'ar' ? 'المساعد الصوتي الذكي (AI Voice Briefing)' : 'AI Voice Research Assistant'}
             </h3>
             <p className="text-xs text-gray-400 font-sans">
               {lang === 'ar'
-                ? `ملخص صوتي مباشر وشامل لصفقة ${currentAsset === 'BTC' ? 'البيتكوين' : currentAsset === 'ETH' ? 'الإيثريوم' : 'الذهب'}`
-                : `Instant verbal briefing and trade plan for ${currentAsset}`}
+                ? `ملخص صوتي مباشر وشامل لبيانات ${currentAsset === 'BTC' ? 'البيتكوين' : currentAsset === 'ETH' ? 'الإيثريوم' : 'الذهب'}`
+                : `Instant verbal briefing and analysis for ${currentAsset}`}
             </p>
           </div>
         </div>

@@ -98,9 +98,9 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
         status: 'IN_PROFIT',
         pnlPercent: Number((((livePrices.BTC - 79454.28) / 79454.28) * 100).toFixed(2)),
         maxFavorableExcursionPercent: Number((((Math.max(79560, livePrices.BTC) - 79454.28) / 79454.28) * 100).toFixed(2)),
-        summaryAr: 'إشارة تراكم سبوت مؤكدة بعد سحب سيولة القيعان عند 78,800$ وتأكيد كسر الهيكل CHOCH_BULLISH في منطقة خصم عميقة.',
-        summaryEn: 'Confirmed spot accumulation following liquidity sweep at $78,800 and CHOCH_BULLISH confirmation in deep discount.',
-        confluenceReasonAr: 'سحب سيولة القاع 78,800$ + دعم فيبوناتشي الموجة 4 (0.618) + تدفقات سيولة +10 من DefiLlama',
+        summaryAr: 'محاكاة: رصد احتمالية تراكم سبوت بعد سحب سيولة افتراضي عند 78,800$ وتأكيد CHOCH_BULLISH نظري.',
+        summaryEn: 'Simulation: Potential spot accumulation following liquidity sweep at $78,800 and theoretical CHOCH_BULLISH.',
+        confluenceReasonAr: 'سحب سيولة القاع 78,800$ + دعم فيبوناتشي الموجة 4 (0.618) + تدفقات سيولة',
       },
       // 2. ETH Bullish Accumulation Today (Sept 4)
       {
@@ -123,9 +123,9 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
         status: 'IN_PROFIT',
         pnlPercent: Number((((livePrices.ETH - 2451.84) / 2451.84) * 100).toFixed(2)),
         maxFavorableExcursionPercent: Number((((Math.max(2458.50, livePrices.ETH) - 2451.84) / 2451.84) * 100).toFixed(2)),
-        summaryAr: 'ارتداد قوي من منطقة طلب مؤسسية (Demand OB) مع تسارع أحجام DEX بنسبة +13.11%.',
-        summaryEn: 'Sharp demand order block rebound with DEX volume acceleration (+13.11%).',
-        confluenceReasonAr: 'بلوك طلب مؤسسي 2400$ + مؤشر SuperTrend صاعد + تسارع السيولة اللامركزية',
+        summaryAr: 'محاكاة: رصد ارتداد من منطقة طلب افتراضية (Demand OB).',
+        summaryEn: 'Simulation: Observed theoretical demand order block rebound.',
+        confluenceReasonAr: 'بلوك طلب مؤسسي 2400$ + مؤشر SuperTrend صاعد',
       },
       // 3. PAXG Safe Haven Accumulation Today (Sept 4)
       {
@@ -148,9 +148,9 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
         status: 'IN_PROFIT',
         pnlPercent: Number((((livePrices.PAXG - 4437.69) / 4437.69) * 100).toFixed(2)),
         maxFavorableExcursionPercent: Number((((Math.max(4445.20, livePrices.PAXG) - 4437.69) / 4437.69) * 100).toFixed(2)),
-        summaryAr: 'تمركز تحوطي في الذهب الرقمي داخل قناة صاعدة هادئة وثبات فوق متوسط EMA 50.',
-        summaryEn: 'Safe-haven accumulation inside steady ascending channel above EMA 50.',
-        confluenceReasonAr: 'قناة صاعدة + ثبات فوق EMA 50 + تحوط ضد تقلبات السيولة',
+        summaryAr: 'محاكاة: احتمالية تمركز تحوطي في الذهب الرقمي داخل قناة صاعدة.',
+        summaryEn: 'Simulation: Potential safe-haven accumulation inside ascending channel.',
+        confluenceReasonAr: 'قناة صاعدة + ثبات فوق EMA 50',
       },
       // 4. BTC Defensive Exit Yesterday (Sept 3)
       {
@@ -174,8 +174,8 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
         pnlPercent: 0,
         maxFavorableExcursionPercent: 0,
         drawdownSavedPercent: 2.85, // Avoided the dip down to $76,850 before the sweep
-        summaryAr: 'إشارة خروج دفاعية سبوت: مواجهة قمم مناطق عرض مؤسسية مع تباعد سلبي في الزخم، تم تسييل السبوت وتفادي هبوط تصحيحي بنسبة 2.85%.',
-        summaryEn: 'Defensive spot liquidation: encountered heavy supply block with momentum divergence, successfully avoiding a 2.85% corrective dip.',
+        summaryAr: 'محاكاة: إشارة خروج افتراضية لمواجهة مناطق عرض نظرية مع تباعد سلبي في الزخم.',
+        summaryEn: 'Simulation: Defensive theoretical exit encountering supply block with momentum divergence.',
         confluenceReasonAr: 'منطقة عرض مؤسسية (Supply OB) + تشبع شرائي + تباعد سلبي في MACD',
       },
       // 5. ETH Defensive Exit Yesterday (Sept 3)
@@ -200,8 +200,8 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
         pnlPercent: 0,
         maxFavorableExcursionPercent: 0,
         drawdownSavedPercent: 3.20, // Avoided the drop down to $2,348
-        summaryAr: 'إشارة خروج وحماية كاملة: تشكل موجة تصحيح C هابطة مع كسر هيكل CHOCH بيعي، تم تجنب هبوط بمقدار 3.2% حتى اكتمال القاع.',
-        summaryEn: 'Full defensive exit: wave C corrective breakdown with CHOCH_BEARISH, successfully shielded capital from a 3.2% descent.',
+        summaryAr: 'محاكاة: تشكل موجة تصحيح C هابطة محتملة، خروج ورقي.',
+        summaryEn: 'Simulation: Potential wave C corrective breakdown, paper exit.',
         confluenceReasonAr: 'موجة إليوت التصحيحية Wave C + كسر هيكل بيعي CHOCH_BEARISH',
       },
     ];
@@ -240,8 +240,8 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
           pnlPercent: pnl,
           maxFavorableExcursionPercent: mfe,
           drawdownSavedPercent: isBuy ? undefined : 2.5,
-          summaryAr: s.summaryAr || 'إشارة سبوت مؤكدة ضمن مسار استراتيجية إياد للتداول.',
-          summaryEn: s.summaryEn || 'Verified spot signal within EYAD trading strategy.',
+          summaryAr: s.summaryAr || 'محاكاة: رصد لحدث سبوت ضمن إطار استراتيجية البحث.',
+          summaryEn: s.summaryEn || 'Simulation: Observed spot event within research strategy.',
           confluenceReasonAr: 'توافق مؤشرات الزخم والسيولة المؤسسية',
         };
       });
@@ -321,9 +321,8 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
   // Copy Executive Report to Clipboard
   const handleCopyAuditReport = () => {
     const reportText = `
-=== تقرير التحليل الإحصائي لأداء إشارات بوت EYAD (آخر 48 ساعة) ===
+=== تقرير التحليل الإحصائي لأداء إشارات المحاكاة (آخر 48 ساعة) ===
 تاريخ التدقيق: ${new Date().toLocaleString('ar-EG')}
-معدل النجاح الإجمالي (Success Rate): ${metrics.successRatePercent}%
 عدد الإشارات المفحوصة: ${metrics.totalSignals} إشارة (شراء: ${metrics.buyCount} | خروج دفاعي: ${metrics.sellCount})
 متوسط أقصى ربح مسجل (MFE): +${metrics.avgMfe}%
 متوسط الهبوط المحمي في صفقات الخروج: ${metrics.avgDrawdownSaved}%
@@ -331,10 +330,10 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
 دقة الإشارات ذات الثقة العالية (≥85%): ${metrics.highConvictionRate}% (${metrics.highConvictionCount} إشارات)
 
 تفصيل الأصول:
-- BTC: سعر الدخول الحالي: $${livePrices.BTC.toLocaleString()} | إشارة: تراكم سبوت (STRONG_BUY) | الأهداف: $80,965 - $82,779
-- ETH: سعر الدخول الحالي: $${livePrices.ETH.toLocaleString()} | إشارة: تراكم سبوت (STRONG_BUY) | الأهداف: $2,512 - $2,595
-- PAXG: سعر الدخول الحالي: $${livePrices.PAXG.toLocaleString()} | إشارة: تحوط سبوت (BUY) | الأهداف: $4,498 - $4,590
-النتيجة الاستراتيجية: صفر خسائر منفذة في السبوت مع التزام كامل بحماية رأس المال وسحب السيولة.
+- BTC: سعر الدخول الحالي: $${livePrices.BTC.toLocaleString()} | إشارة: محاكاة تراكم (STRONG_BUY) | الأهداف: $80,965 - $82,779
+- ETH: سعر الدخول الحالي: $${livePrices.ETH.toLocaleString()} | إشارة: محاكاة تراكم (STRONG_BUY) | الأهداف: $2,512 - $2,595
+- PAXG: سعر الدخول الحالي: $${livePrices.PAXG.toLocaleString()} | إشارة: محاكاة تحوط (BUY) | الأهداف: $4,498 - $4,590
+النتيجة الاستراتيجية: بيانات بحثية ونظرية فقط لا تمثل نصيحة استثمارية.
 `.trim();
 
     navigator.clipboard.writeText(reportText).then(() => {
@@ -403,15 +402,15 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
 
       {/* 4 Core Success Metric KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        {/* Metric 1: Success Rate */}
+        {/* Metric 1: Analytical Success Rate */}
         <div className="rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-950/20 to-black p-3.5 relative overflow-hidden">
           <div className="flex items-center justify-between text-xs text-gray-400">
             <span className="flex items-center gap-1.5">
               <Award className="w-3.5 h-3.5 text-emerald-400" />
-              {lang === 'ar' ? 'معدل النجاح الإجمالي' : 'Overall Success Rate'}
+              {lang === 'ar' ? 'دقة الرصد التحليلي' : 'Analytical Success Rate'}
             </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">
-              100% Spot
+              Theoretical
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
@@ -419,11 +418,11 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
               {metrics.successRatePercent}%
             </span>
             <span className="text-xs text-emerald-300/80 font-sans">
-              ({metrics.buyCount} شراء + {metrics.sellCount} خروج آمن)
+              ({metrics.buyCount} محاكاة دخول + {metrics.sellCount} خروج نظري)
             </span>
           </div>
           <div className="mt-2 text-[11px] text-gray-400 font-sans leading-relaxed">
-            {lang === 'ar' ? 'صفر خسائر منفذة في السبوت بفضل حماية رأس المال' : 'Zero realized losses with strict capital protection'}
+            {lang === 'ar' ? 'نسبة نجاح الإشارات في المحاكاة النظرية' : 'Success rate of signals in theoretical simulation'}
           </div>
         </div>
 
@@ -432,7 +431,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
           <div className="flex items-center justify-between text-xs text-gray-400">
             <span className="flex items-center gap-1.5">
               <TrendingUp className="w-3.5 h-3.5 text-blue-400" />
-              {lang === 'ar' ? 'أقصى ربح مسجل (MFE)' : 'Avg Peak Favorable'}
+              {lang === 'ar' ? 'أقصى تحرك إيجابي نظري (MFE)' : 'Avg Peak Favorable'}
             </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono">
               Peak Gains
@@ -443,11 +442,11 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
               +{metrics.avgMfe}%
             </span>
             <span className="text-xs text-blue-300/80 font-sans">
-              متوسط صفقات التراكم
+              متوسط التراكم النظري
             </span>
           </div>
           <div className="mt-2 text-[11px] text-gray-400 font-sans leading-relaxed">
-            {lang === 'ar' ? 'كل إشارات الشراء تحركت صعوداً فور الدخول' : 'All buy signals moved into immediate positive territory'}
+            {lang === 'ar' ? 'التحرك السعري الإيجابي الأقصى بعد الرصد' : 'Maximum favorable price movement post-observation'}
           </div>
         </div>
 
@@ -634,7 +633,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
                     {/* Entry Price */}
                     <td className="py-3 text-right">
                       <div className="text-white font-bold">${rec.entryPrice.toLocaleString()}</div>
-                      <div className="text-[10px] text-gray-500">{isBuy ? 'دخول سبوت' : 'سعر التسييل'}</div>
+                      <div className="text-[10px] text-gray-500">{isBuy ? 'دخول نظري' : 'تسييل نظري'}</div>
                     </td>
 
                     {/* Current / Peak */}
@@ -653,7 +652,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
                           <div className="text-[10px] text-rose-400">SL: ${rec.stopLoss.toLocaleString()}</div>
                         </>
                       ) : (
-                        <div className="text-gray-400 text-[11px] font-sans">حماية رأس المال (USDT)</div>
+                        <div className="text-gray-400 text-[11px] font-sans">حماية افتراضية</div>
                       )}
                     </td>
 
@@ -666,17 +665,17 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
                             {rec.pnlPercent >= 0 ? `+${rec.pnlPercent}%` : `${rec.pnlPercent}%`}
                           </span>
                           <div className="text-[10px] text-gray-400 font-sans mt-0.5">
-                            أقصى ربح: +{rec.maxFavorableExcursionPercent}%
+                            أقصى ربح نظري: +{rec.maxFavorableExcursionPercent}%
                           </div>
                         </div>
                       ) : (
                         <div>
                           <span className="inline-flex items-center gap-1 text-amber-400 font-bold text-xs">
                             <ShieldCheck className="w-3 h-3" />
-                            حماية رأس المال
+                            حماية
                           </span>
                           <div className="text-[10px] text-gray-400 font-sans mt-0.5">
-                            تفادي هبوط: ~{rec.drawdownSavedPercent}%
+                            تفادي هبوط نظري: ~{rec.drawdownSavedPercent}%
                           </div>
                         </div>
                       )}
@@ -699,13 +698,13 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
         <div className="text-xs text-gray-300 font-sans leading-relaxed space-y-2">
           <p>
             {lang === 'ar'
-              ? 'أظهرت إشارات البوت توافقاً بنسبة 100% مع ديناميكيات صانع السوق (Smart Money Concepts): في 3 سبتمبر، عندما كان السعر داخل كتل عرض بيعية، أصدر البوت إشارات خروج دفاعية جنّبت المحفظة الهبوط التصحيحي للموجة C.'
-              : 'The bot signals achieved 100% alignment with Smart Money dynamics: On Sept 3, defensive liquidation shielded capital from wave C drawdowns.'}
+              ? 'أظهرت إشارات المحاكاة توافقاً بنسبة 100% مع ديناميكيات صانع السوق (Smart Money Concepts): في 3 سبتمبر، عندما كان السعر داخل كتل عرض بيعية، أصدر المحرك إشارات خروج دفاعية نظرية لتفادي الموجة C.'
+              : 'The simulated signals achieved 100% alignment with Smart Money dynamics: On Sept 3, theoretical defensive liquidation avoided wave C drawdowns.'}
           </p>
           <p>
             {lang === 'ar'
-              ? 'في 4 سبتمبر، التقطت الخوارزمية لحظة اكتمال سحب السيولة (Liquidity Sweep) عند قاع 78,800$ للبيتكوين وارتداد فيبوناتشي 0.618، ليتم إطلاق إشارات شراء سبوت فورية تراكمت في مناطق خصم مؤسسية محققة أرباحاً مباشرة بنسبة عائد لمخاطرة 1:3.2.'
-              : 'On Sept 4, the algorithm detected the liquidity sweep bottom at $78,800 and the 0.618 Fib pocket, issuing immediate accumulation buy setups at an average 1:3.2 risk-to-reward.'}
+              ? 'في 4 سبتمبر، التقطت الخوارزمية لحظة اكتمال سحب السيولة (Liquidity Sweep) عند قاع 78,800$ للبيتكوين وارتداد فيبوناتشي 0.618، ليتم إصدار محاكاة شراء تراكمت في مناطق خصم مؤسسية.'
+              : 'On Sept 4, the algorithm detected the liquidity sweep bottom at $78,800 and the 0.618 Fib pocket, issuing theoretical accumulation setups.'}
           </p>
         </div>
       </div>

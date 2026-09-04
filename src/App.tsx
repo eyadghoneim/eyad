@@ -547,16 +547,16 @@ export function App() {
 
     const summaries: Record<SupportedAsset, { ar: string; en: string }> = {
       PAXG: {
-        ar: `تحليل ورقي للذهب الرقمي (PAXG/USDT): ارتداد إيجابي من منطقة الطلب المؤسسية مع تدفق السيولة نحو الملاذات الآمنة والتحوط ضد التضخم الكلي. جميع البيانات والشروحات هي لمحاكاة الأبحاث فقط (Paper Trading).`,
-        en: `Paper analysis for Pax Gold (PAXG/USDT): Bounce off institutional Demand Zone driven by safe-haven macro liquidity flows. All data and analysis are for research and simulation purposes only.`,
+        ar: `محاكاة الذهب الرقمي (PAXG/USDT): ارتداد إيجابي افتراضي من منطقة الطلب المؤسسية مع تدفق السيولة نحو الملاذات الآمنة. جميع البيانات والشروحات هي لمحاكاة الأبحاث فقط (Paper Trading).`,
+        en: `PAXG/USDT Simulation: Virtual bounce off institutional Demand Zone driven by safe-haven macro liquidity flows. All data and analysis are for research and simulation purposes only.`,
       },
       ETH: {
-        ar: `تحليل ورقي للإيثريوم (ETH/USDT): إعادة اختبار دعم EMA21 وزخم تصاعدي لمؤشر MACD مع تدفقات سيولة التمويل اللامركزي DeFi. الشرح التحليلي (SMC/Elliott) هو للمحاكاة والقياس التاريخي وليس إشارة تداول حية.`,
-        en: `Paper analysis for Ethereum (ETH/USDT): EMA21 retest confirmed with bullish MACD momentum and DeFi liquidity inflows. SMC/Elliott explanations are for analytical simulation, not live execution signals.`,
+        ar: `محاكاة الإيثريوم (ETH/USDT): إعادة اختبار وهمي لدعم EMA21 وزخم تصاعدي لمؤشر MACD مع تدفقات سيولة التمويل اللامركزي DeFi. الشرح التحليلي هو للمحاكاة والقياس التاريخي.`,
+        en: `ETH/USDT Simulation: Theoretical EMA21 retest confirmed with bullish MACD momentum and DeFi liquidity inflows. Analysis is for simulation and historical measurement.`,
       },
       BTC: {
-        ar: `تحليل ورقي للبتكوين (BTC/USDT): السعر يختبر دعم EMA21 مع حجم التداول ومؤشر ADX الصاعد. يرجى ملاحظة أن الاستراتيجية لم تتفوق على الاحتفاظ (Buy & Hold) في الاختبارات التاريخية، ويجب اعتبارها دراسة تحليلية (محاكاة) وليست إشارة دخول.`,
-        en: `Paper analysis for Bitcoin (BTC/USDT): Price retests EMA21 with volume confirmation and ADX > 20. Note that the strategy has historically underperformed Buy & Hold. This is purely an analytical simulation, not a live execution signal.`,
+        ar: `محاكاة البتكوين (BTC/USDT): السعر يختبر دعم EMA21 مع حجم التداول ومؤشر ADX الصاعد. يرجى ملاحظة أن هذه الواجهة هي دراسة تحليلية (محاكاة) وليست إشارة دخول أو تنبيه تداول.`,
+        en: `BTC/USDT Simulation: Price retests EMA21 with volume confirmation and ADX > 20. Note that this dashboard is purely an analytical simulation, not a live execution signal.`,
       },
     };
 
@@ -1053,7 +1053,7 @@ export function App() {
               }`}
             >
               <Wallet className="w-3.5 h-3.5" />
-              <span>{lang === 'ar' ? 'المحفظة التجريبية ومحاكي الباك تيست' : 'Paper Portfolio & Backtest'}</span>
+              <span>{lang === 'ar' ? 'محفظة المحاكاة والباك تيست' : 'Simulation Portfolio & Backtest'}</span>
               {paperAccount.positions.length > 0 && (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               )}
@@ -1445,7 +1445,7 @@ export function App() {
       <footer className="mt-8 border-t border-[#1f1f1f] bg-[#0a0a0a] py-3 text-xs text-gray-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-[10px]">
           <div className="flex items-center gap-4 text-gray-400">
-            <span className="font-bold text-white">EYAD Trading Strategy Engine</span>
+            <span className="font-bold text-white">EYAD Research Strategy Engine</span>
             <span>•</span>
             <div>Assets: BTC (+30%) | ETH (+16%) | PAXG (+60%)</div>
             <div className="hidden sm:block">Multi-Asset Execution</div>

@@ -88,14 +88,14 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
         insightAr: 'تفادي ساعات افتتاح وول ستريت (13:30-14:30) والشراء في مناطق العرض كان سيوفر $580 ويرفع نسبة الفوز من 71% إلى 85%.',
         insightEn: 'Avoiding US session open chop and late supply chases would have recovered $580 and increased win rate to 85%.'
       },
-      executiveSummaryAr: 'أظهر الفحص الاستقرائي العميق بواسطة محرك Gemini لسجل الصفقات أن الاستراتيجية تحقق أعلى عوائد في قيعان التراكم (Discount Liquidity Sweeps) والموجة 3 الدافعة. في المقابل، تركزت 68% من الخسائر في الشراء الاندفاعي عند قمم مناطق العرض وافتتاح الجلسة الأمريكية المتقلبة.',
-      executiveSummaryEn: 'Deep trade history audit reveals peak profitability in accumulation discount sweeps and Elliott Wave 3 impulses. Conversely, 68% of losses occurred when chasing late breakouts into overhead supply and during volatile US market opening bells.',
+      executiveSummaryAr: 'أظهر الفحص الاستقرائي العميق بواسطة محرك Gemini لسجل المحاكاة أن الاستراتيجية تحقق أعلى عوائد في قيعان التراكم (Discount Liquidity Sweeps) والموجة 3 الدافعة. في المقابل، تركزت 68% من الخسائر في الشراء الاندفاعي عند قمم مناطق العرض وافتتاح الجلسة الأمريكية المتقلبة.',
+      executiveSummaryEn: 'Deep simulation history audit reveals peak profitability in accumulation discount sweeps and Elliott Wave 3 impulses. Conversely, 68% of losses occurred when chasing late breakouts into overhead supply and during volatile US market opening bells.',
       successPatterns: [
         {
           titleAr: 'اقتناص قيعان التراكم المؤسسي (Discount Liquidity Sweep)',
           titleEn: 'Discount Liquidity Sweep Confluence',
-          descriptionAr: 'الصفقات التي تم فتحها فور سحب سيولة قاع سابق (Liquidity Sweep Low) داخل نطاق الخصم (Discount < 0.5) حققت معدل نجاح 88% ومتوسط ربح +5.4% مع انعدام التراجع اللحظي تقريباً.',
-          descriptionEn: 'Setups entered right after a liquidity sweep of a swing low in deep discount (< 0.5) achieved an 88% win rate with an average +5.4% gain and near-zero drawdown.',
+          descriptionAr: 'الإشارات التي تم تسجيلها فور سحب سيولة قاع سابق (Liquidity Sweep Low) داخل نطاق الخصم (Discount < 0.5) حققت معدل نجاح 88% ومتوسط أداء نظري +5.4% مع انعدام التراجع اللحظي تقريباً.',
+          descriptionEn: 'Setups logged right after a liquidity sweep of a swing low in deep discount (< 0.5) achieved an 88% win rate with an average +5.4% theoretical gain and near-zero drawdown.',
           keyIndicators: ['SMC Deep Discount', 'Liquidity Sweep Low', 'RSI Bullish Divergence', 'CVD Buy Absorption'],
           occurrenceCount: 16,
           impact: 'CRITICAL',
@@ -123,8 +123,8 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
         {
           titleAr: 'الشراء الاندفاعي عند قمم مناطق العرض (Chasing Green Candles into Bearish OB)',
           titleEn: 'Chasing into Bearish Order Blocks',
-          descriptionAr: 'تكرر فتح صفقات شراء بعد صعود حاد عند ملامسة كتل العرض المؤسسية ومستويات التشبع (RSI > 72)، مما قاد إلى انعكاس سريع وضرب وقف الخسارة.',
-          descriptionEn: 'Frequent entries occurred after parabolic surges directly into bearish order blocks and overbought momentum (RSI > 72), triggering swift stop-outs.',
+          descriptionAr: 'تكرر تتبع إشارات شراء بعد صعود حاد عند ملامسة كتل العرض المؤسسية ومستويات التشبع (RSI > 72)، مما قاد إلى انعكاس سريع وضرب الوقف.',
+          descriptionEn: 'Frequent signals occurred after parabolic surges directly into bearish order blocks and overbought momentum (RSI > 72), triggering swift stop-outs.',
           rootCauseAr: 'مطاردة الاختراقات المتأخرة دون انتظار إعادة اختبار منطقة الطلب (Lack of Retest Confirmation).',
           rootCauseEn: 'Chasing late breakouts without waiting for retest of broken resistance or institutional demand block.',
           severity: 'CRITICAL',
@@ -133,9 +133,9 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
         {
           titleAr: 'مصائد افتتاح الجلسة الأمريكية (US Market Open Liquidity Squeeze)',
           titleEn: 'US Market Open Volatility Squeeze (13:30 - 14:30 UTC)',
-          descriptionAr: 'شهدت الفترة بين 13:30 و 14:30 UTC أعلى وتيرة صفقات خاسرة بسبب اتساع الفوارق السعرية وضرب السيولة الوهمية لكلا الاتجاهين (Whipsaws).',
+          descriptionAr: 'شهدت الفترة بين 13:30 و 14:30 UTC أعلى وتيرة إشارات خاسرة بسبب اتساع الفوارق السعرية وضرب السيولة الوهمية لكلا الاتجاهين (Whipsaws).',
           descriptionEn: 'The 13:30 - 14:30 UTC session open logged the highest concentration of losses due to widening spreads and double-sided stop runs.',
-          rootCauseAr: 'دخول السوق أثناء هبوب موجة التذبذب المؤسسي الأولى لصناديق الـ ETF والبورصات الأمريكية.',
+          rootCauseAr: 'تسجيل السوق أثناء هبوب موجة التذبذب المؤسسي الأولى لصناديق الـ ETF والبورصات الأمريكية.',
           rootCauseEn: 'Exposure to institutional liquidity rebalancing during initial opening bells of Wall Street and ETFs.',
           severity: 'HIGH',
           frequencyPct: 31,
@@ -143,8 +143,8 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
         {
           titleAr: 'إهمال تضخم معدل التمويل في المشتقات (Ignoring Overheated Futures Funding)',
           titleEn: 'Ignoring Extreme Positive Funding Rates (> 0.04%)',
-          descriptionAr: 'دخول صفقات شراء عندما يكون معدل التمويل في العقود الآجلة متضخماً أدى لتعريض المراكز لهبوط تصفيات مفاجئ (Long Squeeze).',
-          descriptionEn: 'Entering long positions when perpetual futures funding rates were severely overheated resulted in sudden long squeeze flushes.',
+          descriptionAr: 'تتبع إشارات شراء عندما يكون معدل التمويل في العقود الآجلة متضخماً أدى لتعريض المراكز لهبوط تصفيات مفاجئ (Long Squeeze).',
+          descriptionEn: 'Logging long signals when perpetual futures funding rates were severely overheated resulted in sudden long squeeze flushes.',
           rootCauseAr: 'تراكم عقود الشراء ذات الرافعة العالية في السوق مما يحفز الحيتان على الضغط الهابط.',
           rootCauseEn: 'Over-leveraged market sentiment provoking smart money counter-strikes and cascade liquidations.',
           severity: 'HIGH',

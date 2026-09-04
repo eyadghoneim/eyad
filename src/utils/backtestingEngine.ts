@@ -34,11 +34,13 @@ export function run1YearBacktest(
   }
 
   // Determine data source provenance
+  // Force SYNTHETIC_FALLBACK on generated data, NEVER mark it as BINANCE_HISTORICAL
   const isSynthetic = !candles || candles.length < 50;
-  const dataSource: 'BINANCE_HISTORICAL' | 'SYNTHETIC_FALLBACK' = isSynthetic ? 'SYNTHETIC_FALLBACK' : 'BINANCE_HISTORICAL';
+  let dataSource: 'BINANCE_HISTORICAL' | 'SYNTHETIC_FALLBACK' = isSynthetic ? 'SYNTHETIC_FALLBACK' : 'BINANCE_HISTORICAL';
 
   if (fullCandles.length === 0) {
     fullCandles = generate1YearAssetData(asset, candles && candles.length > 0 ? candles[candles.length - 1]?.close : undefined);
+    dataSource = 'SYNTHETIC_FALLBACK';
   }
 
   // Realistic Execution Constants:

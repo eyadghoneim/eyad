@@ -1,9 +1,9 @@
 /**
  * ══════════════════════════════════════════════════════════════
- * 🤖 EYAD Trading — Multi-Asset Trading Strategy (Single File)
+ * 🤖 EYAD Research — Multi-Asset Research Strategy (Single File)
  * ══════════════════════════════════════════════════════════════
  * 
- * ده ملف الاستراتيجية الكامل — كل قواعد التداول في مكان واحد
+ * ده ملف الاستراتيجية الكامل — كل قواعد التحليل في مكان واحد
  * آخر تحديث: August 2026
  * 
  * الأصول: BTC, ETH, PAXG
@@ -18,9 +18,9 @@ export const GENERAL_RULES = {
   tradingType: "SPOT",                    // لا فيوتشرز
   allowShort: false,                       // لا Short Selling
   assets: ["BTC", "ETH", "PAXG"] as const,// الأصول المتاحة
-  maxOpenPositions: 3,                     // صفقات مفتوحة في نفس الوقت
-  maxTradesPerAssetPerDay: 1,             // صفقة واحدة بس في اليوم لكل أصل
-  cooldownBetweenTrades: "24 hours",       // فاصل زمني بين صفقتين لنفس الأصل
+  maxOpenPositions: 3,                     // حالات بحث مفتوحة في نفس الوقت
+  maxTradesPerAssetPerDay: 1,             // إشارة واحدة بس في اليوم لكل أصل
+  cooldownBetweenTrades: "24 hours",       // فاصل زمني بين إشارتين لنفس الأصل
   notificationCooldown: "4 hours",         // 4 ساعات بين كل إشعار
   sendOnNeutral: false,                    // لا يبعت على neutral
   sendOnNonActionable: false,             // لا يبعت لو actionable = false
@@ -219,13 +219,13 @@ export const SELF_LEARNING = {
 };
 
 // ══════════════════════════════════════════════════════════════
-// 📈 الأداء المتوقع (Backtest 60 يوم)
+// 📈 الأداء المتوقع (Not Validated)
 // ══════════════════════════════════════════════════════════════
 
 export const EXPECTED_PERFORMANCE = {
-  BTC: { return: "+30%", winRate: "63%", avgDuration: "28h", sharpe: "2.4" },
-  ETH: { return: "+16%", winRate: "58%", avgDuration: "34h", sharpe: "1.9" },
-  PAXG: { return: "+60%", winRate: "61%", avgDuration: "42h", sharpe: "2.8" },
+  BTC: { return: "NOT VALIDATED", winRate: "NOT VALIDATED", avgDuration: "-", sharpe: "-" },
+  ETH: { return: "NOT VALIDATED", winRate: "NOT VALIDATED", avgDuration: "-", sharpe: "-" },
+  PAXG: { return: "NOT VALIDATED", winRate: "NOT VALIDATED", avgDuration: "-", sharpe: "-" },
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -246,29 +246,29 @@ export const CRON_SCHEDULE = {
 // ══════════════════════════════════════════════════════════════
 
 export const GOLDEN_RULE = `
-1. لا تتداول في سوق جانبي (ADX < 20)
+1. لا تقم بالرصد في سوق جانبي (ADX < 20)
 2. لا تتبع السعر — استنى ارتداد عند الدعم
-3. لا تفتح صفقة لو فيه جدار بيع ضخم
-4. لا تفتح صفقة لو فيه حدث اقتصادي قوي
-5. لو خسرت 3 صفقات ورا بعض → اوقف 24 ساعة
+3. لا ترصد إشارة لو فيه جدار بيع ضخم
+4. لا ترصد إشارة لو فيه حدث اقتصادي قوي
+5. لو فشل الرصد 3 مرات ورا بعض → اوقف 24 ساعة
 6. الهدف أبعد من الوقف 2.7 مرة — رابح حتى لو 50%
 7. تعلم من أخطائك — البوت بيعدّل ثقته تلقائياً
-8. لا يوجد Short — البوت بس بيشتري أو يبيع اللي شراه
-9. صفقة واحدة بس في اليوم لكل أصل
-10. الوقف المتحرك بياخد الربح — متمسكش في الصفقة
+8. لا يوجد Short — البوت بس بيرصد الشراء أو البيع
+9. إشارة واحدة بس في اليوم لكل أصل
+10. الوقف المتحرك بياخد الربح — متمسكش في الرصد
 `;
 
 export const GOLDEN_RULES_LIST = [
-  { num: 1, textAr: "لا تتداول في سوق جانبي (ADX < 20)", textEn: "Never trade in a choppy/ranging market (ADX < 20)" },
+  { num: 1, textAr: "لا ترصد في سوق جانبي (ADX < 20)", textEn: "Never monitor in a choppy/ranging market (ADX < 20)" },
   { num: 2, textAr: "لا تتبع السعر — استنى ارتداد عند الدعم وEMA21", textEn: "Never chase green candles — wait for support & EMA21 retest" },
-  { num: 3, textAr: "لا تفتح صفقة لو فيه جدار بيع ضخم في دفتر الأوامر", textEn: "Avoid opening trades against heavy ask wall barriers" },
-  { num: 4, textAr: "لا تفتح صفقة أثناء الأحداث الاقتصادية الكبرى (CPI, FOMC)", textEn: "Freeze entries around high-impact macro news releases" },
-  { num: 5, textAr: "لو خسرت 3 صفقات متتالية → وضع الحماية والتوقف 24 ساعة", textEn: "3 consecutive losses triggers 24h protection cooldown" },
+  { num: 3, textAr: "لا ترصد إشارة لو فيه جدار بيع ضخم في دفتر الأوامر", textEn: "Avoid signaling against heavy ask wall barriers" },
+  { num: 4, textAr: "لا ترصد إشارة أثناء الأحداث الاقتصادية الكبرى (CPI, FOMC)", textEn: "Freeze entries around high-impact macro news releases" },
+  { num: 5, textAr: "لو فشل الرصد 3 مرات متتالية → وضع الحماية والتوقف 24 ساعة", textEn: "3 consecutive invalidations triggers 24h protection cooldown" },
   { num: 6, textAr: "الهدف أبعد من الوقف بـ 2.7 مرة على الأقل (2x ATR SL مقابل 4x/6x ATR TP)", textEn: "Reward-to-risk minimum 2.7 (2x ATR SL vs 4x/6x ATR TP)" },
-  { num: 7, textAr: "تعلم من أخطائك — البوت بيعدل ثقته تلقائياً ويوثق الدروس", textEn: "Self-correcting AI memory logs mistakes and adapts rules" },
-  { num: 8, textAr: "لا يوجد Short إطلاقاً — البوت يتداول السبوت فقط لشراء وبيع الأصل", textEn: "Strictly Spot trading only — zero shorting or liquidation risk" },
-  { num: 9, textAr: "صفقة واحدة فقط في اليوم لكل أصل بفاصل 24 ساعة", textEn: "Maximum 1 trade per asset per 24 hours" },
-  { num: 10, textAr: "الوقف المتحرك (2%) وجني الأرباح الجزئي (50% عند TP1) يضمنان الربح", textEn: "Trailing stop (2%) and 50% partial exit at TP1 lock in gains" },
+  { num: 7, textAr: "تعلم من أخطائك — المحرك بيعدل ثقته تلقائياً ويوثق الدروس", textEn: "Self-correcting AI memory logs mistakes and adapts rules" },
+  { num: 8, textAr: "لا يوجد Short إطلاقاً — المحرك يرصد السبوت فقط", textEn: "Strictly Spot analysis only — zero shorting or liquidation risk" },
+  { num: 9, textAr: "إشارة واحدة فقط في اليوم لكل أصل بفاصل 24 ساعة", textEn: "Maximum 1 signal per asset per 24 hours" },
+  { num: 10, textAr: "الوقف المتحرك (2%) وجني الأرباح الجزئي (50% عند TP1) يضمنان الحماية", textEn: "Trailing stop (2%) and 50% partial exit at TP1 lock in gains" },
 ];
 
 /**
