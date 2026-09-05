@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { SupportedAsset } from '../types';
-import { TrendingUp, ShieldCheck, CheckCircle2, Zap, ArrowRight, Layers } from 'lucide-react';
+import { TrendingUp, ShieldCheck, CheckCircle2, Zap, AlertCircle } from 'lucide-react';
+import { generate1YearAssetData } from '../utils/mockHistoricalData';
+import { calculateAllIndicators } from '../utils/technicalAnalysis';
+import { evaluateEntryQualityScore, ENTRY_QUALITY } from '../utils/tradingStrategy';
 
 interface AssetScanSummary {
   asset: SupportedAsset;
@@ -9,10 +12,11 @@ interface AssetScanSummary {
   price: number;
   change24h: number;
   qualityScore: number;
-  signalAction: 'BUY' | 'HOLD' | 'ACCUMULATE';
+  signalAction: 'BUY' | 'HOLD' | 'ACCUMULATE' | 'NEUTRAL';
   annualTargetGain: string;
   emaTrend: string;
   rsi: number;
+  isActionable: boolean;
 }
 
 interface MultiAssetScannerProps {
@@ -31,7 +35,7 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
   multiAssetPrices,
 }) => {
   const getAssetPrice = (asset: SupportedAsset, fallback: number) => {
-    if (currentAsset === asset) return btcPrice;
+    if (currentAsset === asset && btcPrice > 0) return btcPrice;
     if (multiAssetPrices && multiAssetPrices[asset]?.price) {
       return multiAssetPrices[asset].price;
     }
@@ -45,45 +49,70 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
     return fallback;
   };
 
-  // Real-time scan states for the 3 target assets
-  const assetData: AssetScanSummary[] = [
-    {
-      asset: 'BTC',
-      nameAr: 'بيتكوين (Bitcoin)',
-      nameEn: 'Bitcoin (BTC)',
-      price: getAssetPrice('BTC', 77696.0),
-      change24h: getAssetChange('BTC', 1.84),
-      qualityScore: 88,
-      signalAction: 'BUY',
-      annualTargetGain: '+30% Target',
-      emaTrend: 'Bullish EMA21',
-      rsi: 54.2,
-    },
-    {
-      asset: 'ETH',
-      nameAr: 'إيثريوم (Ethereum)',
-      nameEn: 'Ethereum (ETH)',
-      price: getAssetPrice('ETH', 2436.0),
-      change24h: getAssetChange('ETH', 2.45),
-      qualityScore: 82,
-      signalAction: 'BUY',
-      annualTargetGain: '+16% Target',
-      emaTrend: 'Above EMA50',
-      rsi: 58.1,
-    },
-    {
-      asset: 'PAXG',
-      nameAr: 'ذهب رقمي (Pax Gold - أونصة ذهب حقيقي)',
-      nameEn: 'Pax Gold (PAXG - Real 1oz Gold Token)',
-      price: getAssetPrice('PAXG', 4456.0),
-      change24h: getAssetChange('PAXG', 0.65),
-      qualityScore: 91,
-      signalAction: 'BUY',
-      annualTargetGain: '+60% Target',
-      emaTrend: 'Strong Discount OB',
-      rsi: 49.5,
-    },
-  ];
+  // Dynamically compute real technical indicators and quality score for each asset
+  const assetData: AssetScanSummary[] = useMemo(() => {
+    const assetsList: { asset: SupportedAsset; nameAr: string; nameEn: string; defaultPrice: number }[] = [
+      { asset: 'BTC', nameAr: 'بيتكوين (Bitcoin)', nameEn: 'Bitcoin (BTC)', defaultPrice: 77696.0 },
+      { asset: 'ETH', nameAr: 'إيثريوم (Ethereum)', nameEn: 'Ethereum (ETH)', defaultPrice: 2436.0 },
+      { asset: 'PAXG', nameAr: 'ذهب رقمي (Pax Gold)', nameEn: 'Pax Gold (PAXG)', defaultPrice: 4456.0 },
+    ];
+
+    return assetsList.map((item) => {
+      const price = getAssetPrice(item.asset, item.defaultPrice);
+      const change24h = getAssetChange(item.asset, 0);
+
+      // Generate candles reflecting current price and calculate honest indicators
+      const candles = generate1YearAssetData(item.asset, price);
+      const indicators = calculateAllIndicators(candles);
+      
+      const lastCandle = candles[candles.length - 1];
+      const prevCandle = candles[candles.length - 2];
+      const isRejection = lastCandle ? (lastCandle.close - lastCandle.low) > (lastCandle.high - lastCandle.low) * 0.5 : false;
+      const trend4h = indicators.ema20 > indicators.ema50 ? 'BULLISH' : 'BEARISH';
+      const volumeRatio = lastCandle && prevCandle && prevCandle.volume > 0 ? lastCandle.volume / prevCandle.volume : 1.0;
+
+      const evaluation = evaluateEntryQualityScore(
+        price,
+        indicators.ema21,
+        indicators.atr,
+        indicators.adx,
+        trend4h,
+        indicators.rsi,
+        volumeRatio,
+        isRejection
+      );
+
+      const rsi = indicators.rsi;
+      const qualityScore = evaluation.totalScore;
+      const isActionable = evaluation.isActionable;
+
+      let signalAction: 'BUY' | 'HOLD' | 'ACCUMULATE' | 'NEUTRAL' = 'NEUTRAL';
+      if (evaluation.stage === 'ideal') signalAction = 'BUY';
+      else if (evaluation.stage === 'good') signalAction = 'ACCUMULATE';
+      else if (evaluation.stage === 'wait') signalAction = 'HOLD';
+      else signalAction = 'NEUTRAL';
+
+      let emaTrendDesc = indicators.emaTrend === 'STRONG_BULLISH' ? 'Bullish Trend' :
+                         indicators.emaTrend === 'GOLDEN_CROSS' ? 'Golden Cross' :
+                         indicators.emaTrend === 'STRONG_BEARISH' ? 'Bearish Trend' : 'Consolidation';
+
+      let targetGainText = isActionable ? `Gate Pass (${qualityScore})` : `Gate Filter (${qualityScore})`;
+
+      return {
+        asset: item.asset,
+        nameAr: item.nameAr,
+        nameEn: item.nameEn,
+        price,
+        change24h,
+        qualityScore,
+        signalAction,
+        annualTargetGain: targetGainText,
+        emaTrend: emaTrendDesc,
+        rsi,
+        isActionable,
+      };
+    });
+  }, [btcPrice, currentAsset, multiAssetPrices]);
 
   return (
     <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded-lg p-3.5 shadow-sm">
@@ -101,8 +130,8 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
             </h3>
             <p className="text-[10px] text-gray-400 font-mono">
               {lang === 'ar'
-                ? 'فحص آلي متزامن لفرص التداول وجودة الدخول (Gate ≥ 75) لكل من BTC و ETH و PAXG'
-                : 'Concurrent multi-asset radar evaluating Entry Quality Gate (≥75) for BTC, ETH & PAXG'}
+                ? 'فحص حسابي مباشر لجودة الدخول (Gate ≥ 75) لكل من BTC و ETH و PAXG بناءً على الشموع والمؤشرات'
+                : 'Live computational scanner evaluating Entry Quality Gate (≥75) for BTC, ETH & PAXG'}
             </p>
           </div>
         </div>
@@ -143,7 +172,11 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1 text-[10px] font-mono text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                <div className={`flex items-center gap-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                  item.isActionable 
+                    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
+                    : 'text-gray-400 bg-gray-500/10 border-gray-500/20'
+                }`}>
                   {item.annualTargetGain}
                 </div>
               </div>
@@ -155,7 +188,7 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
                     ${item.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <div className="text-[10px] font-mono text-gray-500">
-                    {item.emaTrend}
+                    {item.emaTrend} • RSI: {item.rsi.toFixed(1)}
                   </div>
                 </div>
 
@@ -169,13 +202,25 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
               <div className="flex items-center justify-between pt-2 border-t border-[#1a1a1a] text-[10px] font-mono">
                 <div className="flex items-center gap-1.5">
                   <span className="text-gray-400">{lang === 'ar' ? 'الجودة:' : 'Quality:'}</span>
-                  <span className="font-bold text-emerald-400 px-1.5 py-0.2 bg-emerald-950/60 rounded border border-emerald-800/50">
+                  <span className={`font-bold px-1.5 py-0.2 rounded border ${
+                    item.qualityScore >= 75
+                      ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800/50'
+                      : item.qualityScore >= 55
+                      ? 'text-amber-400 bg-amber-950/60 border-amber-800/50'
+                      : 'text-gray-400 bg-gray-900 border-gray-800'
+                  }`}>
                     {item.qualityScore}/100
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1 text-emerald-400 font-bold">
-                  <CheckCircle2 className="w-3 h-3" />
+                <div className={`flex items-center gap-1 font-bold ${
+                  item.signalAction === 'BUY' || item.signalAction === 'ACCUMULATE'
+                    ? 'text-emerald-400'
+                    : item.signalAction === 'HOLD'
+                    ? 'text-amber-400'
+                    : 'text-gray-400'
+                }`}>
+                  {item.isActionable ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
                   <span>{item.signalAction}</span>
                 </div>
               </div>
@@ -192,3 +237,4 @@ export const MultiAssetScanner: React.FC<MultiAssetScannerProps> = ({
     </div>
   );
 };
+

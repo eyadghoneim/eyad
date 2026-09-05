@@ -165,7 +165,7 @@ export function evaluatePaperPositionsAuto(
         pnlPercent: tradePnlPct,
         status: tradePnlUsd >= 0 ? 'CLOSED_WIN' : 'CLOSED_LOSS',
         durationHours: Math.max(1, Math.round((Date.now() - pos.entryTime) / (3600 * 1000))),
-        signalConfidence: aiSignal?.convictionScore || 85,
+        signalConfidence: typeof aiSignal?.convictionScore === 'number' ? aiSignal.convictionScore : 0,
         confluenceReason: closeReason,
         marketCondition: 'STRONG_TREND',
         partialExitTaken: pos.partialSold,

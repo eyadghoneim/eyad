@@ -995,22 +995,18 @@ app.post('/api/gemini/analyze-signal', async (req, res) => {
       try {
         const parsed = JSON.parse(geminiResult.text);
         const signalObj = {
-          convictionScore: parsed.convictionScore || 88,
-          signalType: parsed.signalType || 'STRONG_BUY',
-          spotAction: parsed.spotAction || 'SPOT_BUY',
+          convictionScore: typeof parsed.convictionScore === 'number' ? parsed.convictionScore : 0,
+          signalType: parsed.signalType || 'NO_TRADE',
+          spotAction: parsed.spotAction || 'SPOT_HOLD',
           entryPrice: parsed.entryPrice || price,
-          target1: parsed.target1 || Math.round(price * 1.035),
-          target2: parsed.target2 || Math.round(price * 1.07),
-          target3: parsed.target3 || Math.round(price * 1.12),
-          stopLoss: parsed.stopLoss || Math.round(price * 0.974),
-          riskRewardRatio: parsed.riskRewardRatio || 3.4,
-          summaryAr: parsed.summaryAr || 'إشارة سبوت مؤكدة بناء على تلاقي المؤشرات الفنية.',
-          summaryEn: parsed.summaryEn || 'Confirmed spot signal based on technical confluence.',
-          confluenceFactors: Array.isArray(parsed.confluenceFactors) ? parsed.confluenceFactors : [
-            'توافق منطقة الطلب المؤسسية SMC Discount Zone',
-            'الموجة الثالثة الدافعة من موجات إليوت',
-            'تقاطع إيجابي في مؤشر MACD',
-          ],
+          target1: parsed.target1 || 0,
+          target2: parsed.target2 || 0,
+          target3: parsed.target3 || 0,
+          stopLoss: parsed.stopLoss || 0,
+          riskRewardRatio: parsed.riskRewardRatio || 0,
+          summaryAr: parsed.summaryAr || 'تحليل الذكاء الاصطناعي متاح بناء على المعطيات الفنية.',
+          summaryEn: parsed.summaryEn || 'AI analysis generated based on current technical inputs.',
+          confluenceFactors: Array.isArray(parsed.confluenceFactors) ? parsed.confluenceFactors : [],
           riskWarningAr: parsed.riskWarningAr || 'سبوت فقط: بيع كامل الكمية عند كسر وقف الخسارة.',
           riskWarningEn: parsed.riskWarningEn || 'Spot Only: Sell holdings on stop loss invalidation.',
           modelUsed: `${geminiResult.modelUsed} + Liquidity Regime Overlay`,
@@ -1608,8 +1604,8 @@ ${JSON.stringify(sampleLosses, null, 2)}
           ...parsedResult,
           analyzedAt: Date.now(),
           modelUsed: actualModelUsed,
-          totalTradesAnalyzed: totalTrades || parsedResult.totalTradesAnalyzed || 42,
-          winRate: winRate || parsedResult.winRate || 69,
+          totalTradesAnalyzed: totalTrades || parsedResult.totalTradesAnalyzed || 0,
+          winRate: winRate !== undefined ? winRate : (parsedResult.winRate || 0),
         },
       });
     }
@@ -1618,14 +1614,18 @@ ${JSON.stringify(sampleLosses, null, 2)}
     const institutionalFallback = {
       analyzedAt: Date.now(),
       modelUsed: actualModelUsed,
-      totalTradesAnalyzed: totalTrades || 45,
-      winRate: winRate || 68,
-      totalPnlUsd: totalPnlUsd || 1480.25,
+      totalTradesAnalyzed: totalTrades,
+      winRate: winRate,
+      totalPnlUsd: totalPnlUsd,
       recoverySimulation: {
-        recoverableLossUsd: Math.round(grossLoss * 0.65) || 540,
-        potentialWinRate: Math.min(92, Math.round(winRate + 14)) || 82,
-        insightAr: `تفادي ساعات افتتاح وول ستريت (13:30-14:30) ومطاردة مناطق العرض كان سيوفر $${Math.round(grossLoss * 0.65) || 540} ويرفع نسبة الفوز إلى ${Math.min(92, Math.round(winRate + 14)) || 82}%.`,
-        insightEn: `Avoiding US session open chop and late supply chases would have recovered $${Math.round(grossLoss * 0.65) || 540} and increased win rate to ${Math.min(92, Math.round(winRate + 14)) || 82}%.`,
+        recoverableLossUsd: Math.round(grossLoss * 0.65),
+        potentialWinRate: Math.min(100, Math.round(winRate + 10)),
+        insightAr: grossLoss > 0
+          ? `تفادي ساعات افتتاح وول ستريت (13:30-14:30) ومطاردة مناطق العرض كان سيوفر $${Math.round(grossLoss * 0.65)} ويرفع نسبة الفوز إلى ${Math.min(100, Math.round(winRate + 10))}%.`
+          : `أداء تداول ممتاز بدون خسائر جسيمة، يُنصح بالاستمرار في الالتزام بقواعد الدخول والانضباط.`,
+        insightEn: grossLoss > 0
+          ? `Avoiding US session open chop and late supply chases would have recovered $${Math.round(grossLoss * 0.65)} and increased win rate to ${Math.min(100, Math.round(winRate + 10))}%.`
+          : `Strong trade execution with low drawdowns; recommend maintaining strict adherence to entry rules.`,
       },
       executiveSummaryAr: `أظهر التحليل الاستقرائي العميق بواسطة Gemini Flash 3.8 لسجل تداولات السبوت (${asset}) أن الاستراتيجية تتمتع بصلابة استثنائية في قيعان التراكم (Discounts) وموجات الدفع الصاعدة، مع تسجيل نسبة نجاح ${winRate}%. في المقابل، تركزت معظم الخسائر في الدخول المتأخر عند قمم مناطق العرض وافتتاح الجلسات الأمريكية المتقلبة.`,
       executiveSummaryEn: `Gemini Flash 3.8 deep audit of ${asset} spot history reveals robust performance in accumulation discounts and impulse waves, delivering a ${winRate}% win rate. Drawdowns predominantly stemmed from late chasing into overhead supply and volatility spikes around US session opens.`,
