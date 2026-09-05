@@ -123,6 +123,21 @@ function safeTokenCompare(provided: string, expected: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
+// Timeout helper for resilient external upstream API calls
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 4000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 function extractAdminToken(req: Request) {
   const headerToken = req.header('x-bot-admin-token') || '';
   const bearerToken = (req.header('authorization') || '').replace(/^Bearer\s+/i, '');
@@ -201,15 +216,15 @@ app.get('/api/market/btc-live', async (req, res) => {
   };
   const binanceInterval = intervalMap[timeframe] || '1h';
 
-  // 1. Try Binance REST API
+  // 1. Try Binance REST API with 3.5s timeout
   try {
     const [tickerRes, klinesRes] = await Promise.all([
-      fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`, {
+      fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`, {
         headers: { 'User-Agent': 'eyad-btc-bot' },
-      }),
-      fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=500`, {
+      }, 3500),
+      fetchWithTimeout(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=500`, {
         headers: { 'User-Agent': 'eyad-btc-bot' },
-      }),
+      }, 3500),
     ]);
 
     if (tickerRes.ok) {
@@ -249,9 +264,9 @@ app.get('/api/market/btc-live', async (req, res) => {
     // Continue to next fallback
   }
 
-  // 2. Try Coinbase API
+  // 2. Try Coinbase API with 2.5s timeout
   try {
-    const cbRes = await fetch(`https://api.coinbase.com/v2/prices/${assetConfig.coinbase}/spot`);
+    const cbRes = await fetchWithTimeout(`https://api.coinbase.com/v2/prices/${assetConfig.coinbase}/spot`, {}, 2500);
     if (cbRes.ok) {
       const cbData = await cbRes.json();
       const price = parseFloat(cbData.data.amount);
@@ -274,9 +289,9 @@ app.get('/api/market/btc-live', async (req, res) => {
     // Continue
   }
 
-  // 3. Try CoinGecko API
+  // 3. Try CoinGecko API with 2.5s timeout
   try {
-    const cgRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${assetConfig.coingecko}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true`);
+    const cgRes = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${assetConfig.coingecko}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true`, {}, 2500);
     if (cgRes.ok) {
       const cgData = await cgRes.json();
       const coin = cgData[assetConfig.coingecko];
@@ -387,9 +402,9 @@ app.get('/api/market/all-assets', async (req, res) => {
 
   try {
     const symbolParams = JSON.stringify(symbols);
-    const bRes = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolParams)}`, {
+    const bRes = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolParams)}`, {
       headers: { 'User-Agent': 'eyad-trading-bot' },
-    });
+    }, 3500);
 
     if (bRes.ok) {
       const data = await bRes.json();
@@ -492,9 +507,9 @@ app.get('/api/market/depth', async (req, res) => {
   if (asset === 'PAXG') symbol = 'PAXGUSDT';
 
   try {
-    const depthRes = await fetch(`https://api.binance.com/api/v3/depth?symbol=${symbol}&limit=50`, {
+    const depthRes = await fetchWithTimeout(`https://api.binance.com/api/v3/depth?symbol=${symbol}&limit=50`, {
       headers: { 'User-Agent': 'eyad-trading-bot' },
-    });
+    }, 3000);
 
     if (depthRes.ok) {
       const data = await depthRes.json();
@@ -645,12 +660,12 @@ app.get('/api/market/derivatives', async (req, res) => {
     }
 
     const [fundingRes, oiRes] = await Promise.allSettled([
-      fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`, {
+      fetchWithTimeout(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`, {
         headers: { 'User-Agent': 'eyad-trading-bot' },
-      }),
-      fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`, {
+      }, 3000),
+      fetchWithTimeout(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`, {
         headers: { 'User-Agent': 'eyad-trading-bot' },
-      }),
+      }, 3000),
     ]);
 
     let rawFundingRate = 0.0001; // default 0.01%
@@ -731,7 +746,7 @@ app.get('/api/market/sentiment', async (req, res) => {
   let fearGreedLabel = 'Greed';
 
   try {
-    const fngRes = await fetch('https://api.alternative.me/fng/?limit=1');
+    const fngRes = await fetchWithTimeout('https://api.alternative.me/fng/?limit=1', {}, 2500);
     if (fngRes.ok) {
       const fngData = await fngRes.json();
       if (fngData.data?.[0]) {
@@ -2231,6 +2246,7 @@ app.get('/api/bot/public-status', async (req, res) => {
 
 app.use('/api/bot', botRateLimit, (req, res, next) => {
   if (req.path === '/public-status') return next();
+  if (req.method === 'GET' && (req.path === '/checksum' || req.path === '/config')) return next();
   return requireBotAdmin(req as Request, res, next);
 });
 

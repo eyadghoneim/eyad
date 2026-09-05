@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Header } from './components/Header';
 import { LiveSignalPanel } from './components/LiveSignalPanel';
 import { InteractiveChart } from './components/InteractiveChart';
@@ -599,9 +599,9 @@ export function App() {
   const high24h = Math.max(...candles.slice(-24).map((c) => c.high));
   const low24h = Math.min(...candles.slice(-24).map((c) => c.low));
 
-  const indicators: IndicatorValues = calculateAllIndicators(candles);
-  const smc: SMCAnalysis = analyzeSMC(candles);
-  const elliott: ElliottWaveAnalysis = analyzeElliottWaves(candles);
+  const indicators: IndicatorValues = useMemo(() => calculateAllIndicators(candles), [candles]);
+  const smc: SMCAnalysis = useMemo(() => analyzeSMC(candles), [candles]);
+  const elliott: ElliottWaveAnalysis = useMemo(() => analyzeElliottWaves(candles), [candles]);
 
   const [sentiment, setSentiment] = useState<LiquiditySentimentData>({
     fearAndGreedIndex: 50,
@@ -773,6 +773,15 @@ export function App() {
   useEffect(() => {
     setAiSignal((prev) => (prev ? applyLiquidityRegimeToSignal(prev, liquidityRegime, lang) : prev));
   }, [liquidityRegime, lang]);
+
+  // Auto-trigger initial analysis once candles are available if aiSignal is null
+  const hasAutoTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (!hasAutoTriggeredRef.current && candles.length > 20 && btcPrice > 0) {
+      hasAutoTriggeredRef.current = true;
+      handleTriggerGeminiAnalysis();
+    }
+  }, [candles.length, btcPrice]);
 
   // Automated Paper Trading Engine Evaluation & Execution Loop (Auto-Pilot)
   useEffect(() => {

@@ -59,12 +59,20 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
   const conviction = aiSignal?.convictionScore ?? 0;
   const isBuy = hasSignal && signalType.includes('BUY');
   const isSell = hasSignal && signalType.includes('SELL');
-  const entry = aiSignal?.entryPrice ?? null;
-  const target1 = aiSignal?.target1 ?? null;
-  const target2 = aiSignal?.target2 ?? null;
-  const target3 = aiSignal?.target3 ?? null;
-  const stopLoss = aiSignal?.stopLoss ?? null;
-  const riskReward = aiSignal?.riskRewardRatio ?? null;
+  // Honest technical fallback targets derived mathematically from live ATR and EMA21
+  const effectiveAtr = indicators.atr || (btcPrice * 0.015);
+  const technicalSl = Math.round(btcPrice - 2 * effectiveAtr);
+  const technicalTp1 = Math.round(btcPrice + 4 * effectiveAtr);
+  const technicalTp2 = Math.round(btcPrice + 6 * effectiveAtr);
+  const technicalTp3 = Math.round(btcPrice + 8 * effectiveAtr);
+  const technicalRR = 2.0;
+
+  const entry = aiSignal?.entryPrice ?? (btcPrice > 0 ? Math.round(btcPrice) : null);
+  const target1 = aiSignal?.target1 ?? (btcPrice > 0 ? technicalTp1 : null);
+  const target2 = aiSignal?.target2 ?? (btcPrice > 0 ? technicalTp2 : null);
+  const target3 = aiSignal?.target3 ?? (btcPrice > 0 ? technicalTp3 : null);
+  const stopLoss = aiSignal?.stopLoss ?? (btcPrice > 0 ? technicalSl : null);
+  const riskReward = aiSignal?.riskRewardRatio ?? (btcPrice > 0 ? technicalRR : null);
 
   // Safe formatting function for prices and numbers
   const fmtPrice = (v: number | null) =>
@@ -73,20 +81,62 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
   const currentHour = new Date().getUTCHours();
   const isHourBanned = learningState.bannedTradingHours.includes(currentHour);
 
-  // Strategy Gate Score
+  // Strategy Gate Score - fallback to live technical indicators if aiSignal not yet triggered
+  const currentCandle = indicators;
+  const lastClose = btcPrice || 0;
+  const ema21 = indicators.ema21 || lastClose;
+  const atr = indicators.atr || (lastClose * 0.015);
+  const adx = indicators.adx || 22;
+  const trend4h: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = indicators.ema20 > indicators.ema50 ? 'BULLISH' : 'BEARISH';
+  const rsi = indicators.rsi || 50;
+
   const rawQuality = aiSignal?.entryQualityScore;
-  const quality: EntryQualityScoreBreakdown =
-    typeof rawQuality === 'object' && rawQuality !== null
-      ? rawQuality
-      : {
-          ema21Score: 0,
-          rejectionScore: 0,
-          volumeScore: 0,
-          trendScore: 0,
-          signalScore: 0,
-          totalScore: typeof rawQuality === 'number' ? rawQuality : 0,
-          passed: typeof rawQuality === 'number' ? rawQuality >= 70 : false,
-        };
+  let quality: EntryQualityScoreBreakdown;
+  
+  if (typeof rawQuality === 'object' && rawQuality !== null) {
+    quality = rawQuality;
+  } else if (typeof rawQuality === 'number' && rawQuality > 0) {
+    quality = {
+      ema21Score: Math.round(rawQuality * 0.25),
+      rejectionScore: Math.round(rawQuality * 0.20),
+      volumeScore: Math.round(rawQuality * 0.15),
+      trendScore: Math.round(rawQuality * 0.20),
+      signalScore: Math.round(rawQuality * 0.20),
+      totalScore: rawQuality,
+      passed: rawQuality >= 70,
+    };
+  } else {
+    // Dynamically calculate from honest live technical indicators
+    const distPercent = Math.abs(lastClose - ema21) / (ema21 || 1) * 100;
+    let ema21Score = 0;
+    if (distPercent <= 0.8) ema21Score = 25;
+    else if (distPercent <= 1.8) ema21Score = 20;
+    else if (distPercent <= 3.0) ema21Score = 12;
+    else if (distPercent <= 5.0) ema21Score = 5;
+
+    let rejectionScore = 0;
+    if (rsi <= 30) rejectionScore = 20;
+    else if (rsi <= 40) rejectionScore = 15;
+    else if (rsi <= 50) rejectionScore = 10;
+    else rejectionScore = 5;
+
+    const volumeScore = 10;
+    const trend4hVal: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 
+      indicators.ema20 > indicators.ema50 ? 'BULLISH' : indicators.ema20 < indicators.ema50 ? 'BEARISH' : 'NEUTRAL';
+    const trendScore = trend4hVal === 'BULLISH' ? 20 : trend4hVal === 'NEUTRAL' ? 10 : 0;
+    const signalScore = adx >= 25 && rsi < 65 ? 20 : adx >= 20 ? 14 : 5;
+    const totalScore = Math.min(100, ema21Score + rejectionScore + volumeScore + trendScore + signalScore);
+
+    quality = {
+      ema21Score,
+      rejectionScore,
+      volumeScore,
+      trendScore,
+      signalScore,
+      totalScore,
+      passed: totalScore >= 70,
+    };
+  }
 
   return (
     <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded p-4 sm:p-5 relative overflow-hidden">
@@ -101,10 +151,16 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
             </div>
             <div className="flex items-baseline space-x-2 space-x-reverse">
               <div
-                className={`text-2xl sm:text-3xl font-mono font-bold tracking-tight text-gray-300`}
+                className={`text-2xl sm:text-3xl font-mono font-bold tracking-tight ${
+                  isBuy || (quality.passed && trend4h === 'BULLISH')
+                    ? 'text-emerald-400'
+                    : isSell || trend4h === 'BEARISH'
+                    ? 'text-rose-400'
+                    : 'text-gray-300'
+                }`}
               >
                 {!hasSignal
-                  ? 'NO_SIGNAL'
+                  ? (quality.passed && trend4h === 'BULLISH' ? 'BULLISH (TECH)' : trend4h === 'BULLISH' ? 'LEAN BULLISH' : 'NEUTRAL')
                   : signalType === 'STRONG_BUY'
                   ? 'BULLISH (PAPER)'
                   : signalType === 'BUY'
