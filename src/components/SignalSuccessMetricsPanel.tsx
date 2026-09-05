@@ -73,151 +73,22 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
     PAXG: lastKnownPrices['PAXG'] || 4442,
   }), [lastKnownPrices]);
 
-  // Construct comprehensive 48-hour audit dataset blending persisted records & verified episodes
+  // Construct audit dataset purely from real persisted signals
   const auditRecords: SignalAuditRecord[] = useMemo(() => {
-    // Verified baseline episodes from the past 48 hours (Sept 3 - Sept 4, 2026)
-    const baseEpisodes: SignalAuditRecord[] = [
-      // 1. BTC Bullish Accumulation Today (Sept 4)
-      {
-        id: 'aud_btc_buy_today',
-        asset: 'BTC',
-        timestamp: 1788536877278, // Today 15:47 UTC
-        dateFormatted: '4 سبتمبر 2026',
-        timeFormatted: '15:47 UTC',
-        signalType: 'STRONG_BUY',
-        spotAction: 'SPOT_BUY',
-        entryPrice: 79454.28,
-        stopLoss: 78245.16,
-        target1: 80965.68,
-        target2: 81872.52,
-        target3: 82779.36,
-        currentPrice: livePrices.BTC,
-        peakPrice: Math.max(79560, livePrices.BTC),
-        troughPrice: 79390,
-        convictionScore: 100,
-        status: 'IN_PROFIT',
-        pnlPercent: Number((((livePrices.BTC - 79454.28) / 79454.28) * 100).toFixed(2)),
-        maxFavorableExcursionPercent: Number((((Math.max(79560, livePrices.BTC) - 79454.28) / 79454.28) * 100).toFixed(2)),
-        summaryAr: 'محاكاة: رصد احتمالية تراكم سبوت بعد سحب سيولة افتراضي عند 78,800$ وتأكيد CHOCH_BULLISH نظري.',
-        summaryEn: 'Simulation: Potential spot accumulation following liquidity sweep at $78,800 and theoretical CHOCH_BULLISH.',
-        confluenceReasonAr: 'سحب سيولة القاع 78,800$ + دعم فيبوناتشي الموجة 4 (0.618) + تدفقات سيولة',
-      },
-      // 2. ETH Bullish Accumulation Today (Sept 4)
-      {
-        id: 'aud_eth_buy_today',
-        asset: 'ETH',
-        timestamp: 1788536878937, // Today 15:47 UTC
-        dateFormatted: '4 سبتمبر 2026',
-        timeFormatted: '15:47 UTC',
-        signalType: 'STRONG_BUY',
-        spotAction: 'SPOT_BUY',
-        entryPrice: 2451.84,
-        stopLoss: 2402.98,
-        target1: 2512.91,
-        target2: 2548.00,
-        target3: 2595.00,
-        currentPrice: livePrices.ETH,
-        peakPrice: Math.max(2458.50, livePrices.ETH),
-        troughPrice: 2449.00,
-        convictionScore: 86,
-        status: 'IN_PROFIT',
-        pnlPercent: Number((((livePrices.ETH - 2451.84) / 2451.84) * 100).toFixed(2)),
-        maxFavorableExcursionPercent: Number((((Math.max(2458.50, livePrices.ETH) - 2451.84) / 2451.84) * 100).toFixed(2)),
-        summaryAr: 'محاكاة: رصد ارتداد من منطقة طلب افتراضية (Demand OB).',
-        summaryEn: 'Simulation: Observed theoretical demand order block rebound.',
-        confluenceReasonAr: 'بلوك طلب مؤسسي 2400$ + مؤشر SuperTrend صاعد',
-      },
-      // 3. PAXG Safe Haven Accumulation Today (Sept 4)
-      {
-        id: 'aud_paxg_buy_today',
-        asset: 'PAXG',
-        timestamp: 1788537418141, // Today 15:56 UTC
-        dateFormatted: '4 سبتمبر 2026',
-        timeFormatted: '15:56 UTC',
-        signalType: 'BUY',
-        spotAction: 'SPOT_BUY',
-        entryPrice: 4437.69,
-        stopLoss: 4389.01,
-        target1: 4498.54,
-        target2: 4540.00,
-        target3: 4590.00,
-        currentPrice: livePrices.PAXG,
-        peakPrice: Math.max(4445.20, livePrices.PAXG),
-        troughPrice: 4435.00,
-        convictionScore: 72,
-        status: 'IN_PROFIT',
-        pnlPercent: Number((((livePrices.PAXG - 4437.69) / 4437.69) * 100).toFixed(2)),
-        maxFavorableExcursionPercent: Number((((Math.max(4445.20, livePrices.PAXG) - 4437.69) / 4437.69) * 100).toFixed(2)),
-        summaryAr: 'محاكاة: احتمالية تمركز تحوطي في الذهب الرقمي داخل قناة صاعدة.',
-        summaryEn: 'Simulation: Potential safe-haven accumulation inside ascending channel.',
-        confluenceReasonAr: 'قناة صاعدة + ثبات فوق EMA 50',
-      },
-      // 4. BTC Defensive Exit Yesterday (Sept 3)
-      {
-        id: 'aud_btc_sell_yesterday',
-        asset: 'BTC',
-        timestamp: 1788427760035, // Yesterday Sept 3
-        dateFormatted: '3 سبتمبر 2026',
-        timeFormatted: '09:29 UTC',
-        signalType: 'SELL',
-        spotAction: 'SPOT_SELL_ALL',
-        entryPrice: 77736.00,
-        stopLoss: 78900.00,
-        target1: 0,
-        target2: 0,
-        target3: 0,
-        currentPrice: livePrices.BTC,
-        peakPrice: 78100.00,
-        troughPrice: 76850.00,
-        convictionScore: 78,
-        status: 'CAPITAL_PROTECTED',
-        pnlPercent: 0,
-        maxFavorableExcursionPercent: 0,
-        drawdownSavedPercent: 2.85, // Avoided the dip down to $76,850 before the sweep
-        summaryAr: 'محاكاة: إشارة خروج افتراضية لمواجهة مناطق عرض نظرية مع تباعد سلبي في الزخم.',
-        summaryEn: 'Simulation: Defensive theoretical exit encountering supply block with momentum divergence.',
-        confluenceReasonAr: 'منطقة عرض مؤسسية (Supply OB) + تشبع شرائي + تباعد سلبي في MACD',
-      },
-      // 5. ETH Defensive Exit Yesterday (Sept 3)
-      {
-        id: 'aud_eth_sell_yesterday',
-        asset: 'ETH',
-        timestamp: 1788427709380, // Yesterday Sept 3
-        dateFormatted: '3 سبتمبر 2026',
-        timeFormatted: '09:28 UTC',
-        signalType: 'STRONG_SELL',
-        spotAction: 'SPOT_SELL_ALL',
-        entryPrice: 2402.34,
-        stopLoss: 2450.39,
-        target1: 0,
-        target2: 0,
-        target3: 0,
-        currentPrice: livePrices.ETH,
-        peakPrice: 2415.00,
-        troughPrice: 2348.00,
-        convictionScore: 88,
-        status: 'CAPITAL_PROTECTED',
-        pnlPercent: 0,
-        maxFavorableExcursionPercent: 0,
-        drawdownSavedPercent: 3.20, // Avoided the drop down to $2,348
-        summaryAr: 'محاكاة: تشكل موجة تصحيح C هابطة محتملة، خروج ورقي.',
-        summaryEn: 'Simulation: Potential wave C corrective breakdown, paper exit.',
-        confluenceReasonAr: 'موجة إليوت التصحيحية Wave C + كسر هيكل بيعي CHOCH_BEARISH',
-      },
-    ];
-
-    // If there are additional distinct persisted signals from live server feed, map them
-    const mappedPersisted: SignalAuditRecord[] = (persistedSignals || [])
-      .filter((s) => s.id && !baseEpisodes.some(b => b.id === s.id))
-      .slice(0, 10)
+    return (persistedSignals || [])
+      .filter((s) => s && s.id)
       .map((s, idx) => {
         const asset = (s.asset || 'BTC') as SupportedAsset;
         const currentP = livePrices[asset] || s.price || 0;
         const entryP = s.entryPrice || s.price || currentP;
-        const isBuy = s.spotAction === 'SPOT_BUY' || s.signalType.includes('BUY');
-        const pnl = isBuy ? Number((((currentP - entryP) / entryP) * 100).toFixed(2)) : 0;
-        const peak = Math.max(entryP * 1.008, currentP);
-        const mfe = isBuy ? Number((((peak - entryP) / entryP) * 100).toFixed(2)) : 0;
+        const isBuy = s.spotAction === 'SPOT_BUY' || (typeof s.signalType === 'string' && s.signalType.includes('BUY'));
+        const pnl = isBuy && entryP > 0 ? Number((((currentP - entryP) / entryP) * 100).toFixed(2)) : 0;
+        const peak = Math.max(entryP, currentP);
+        const mfe = isBuy && entryP > 0 ? Number((((peak - entryP) / entryP) * 100).toFixed(2)) : 0;
+
+        const status: SignalAuditRecord['status'] = isBuy
+          ? (pnl >= 0 ? 'IN_PROFIT' : 'NEUTRAL')
+          : 'CAPITAL_PROTECTED';
 
         return {
           id: s.id || `persisted_${idx}`,
@@ -235,18 +106,17 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
           currentPrice: currentP,
           peakPrice: peak,
           troughPrice: entryP * 0.995,
-          convictionScore: s.convictionScore || 85,
-          status: isBuy ? (pnl >= 0 ? 'IN_PROFIT' : 'NEUTRAL') : 'CAPITAL_PROTECTED',
+          convictionScore: s.convictionScore || 0,
+          status,
           pnlPercent: pnl,
           maxFavorableExcursionPercent: mfe,
-          drawdownSavedPercent: isBuy ? undefined : 2.5,
-          summaryAr: s.summaryAr || 'محاكاة: رصد لحدث سبوت ضمن إطار استراتيجية البحث.',
-          summaryEn: s.summaryEn || 'Simulation: Observed spot event within research strategy.',
-          confluenceReasonAr: 'توافق مؤشرات الزخم والسيولة المؤسسية',
+          drawdownSavedPercent: isBuy ? undefined : 0,
+          summaryAr: s.summaryAr || 'إشارة حقيقية من سجل البوت.',
+          summaryEn: s.summaryEn || 'Real signal from bot history.',
+          confluenceReasonAr: 'تحليل مباشر للمحرك',
         };
-      });
-
-    return [...baseEpisodes, ...mappedPersisted].sort((a, b) => b.timestamp - a.timestamp);
+      })
+      .sort((a, b) => b.timestamp - a.timestamp);
   }, [livePrices, persistedSignals]);
 
   // Filtered list
@@ -271,7 +141,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
 
     // Overall Success Metric = (Profitable Buys + Effective Protective Sells) / Total
     const successCount = winningOrProfitBuys.length + successfulDefensiveSells.length;
-    const successRatePercent = totalSignals > 0 ? Math.round((successCount / totalSignals) * 100) : 100;
+    const successRatePercent = totalSignals > 0 ? Math.round((successCount / totalSignals) * 100) : 0;
 
     // Average Max Profit (MFE) on Buys
     const avgMfe = buySignals.length > 0
@@ -280,29 +150,29 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
 
     // Total Drawdown Saved by Defensive Sells
     const avgDrawdownSaved = sellSignals.length > 0
-      ? Number((sellSignals.reduce((acc, r) => acc + (r.drawdownSavedPercent || 2.5), 0) / sellSignals.length).toFixed(2))
+      ? Number((sellSignals.reduce((acc, r) => acc + (r.drawdownSavedPercent || 0), 0) / sellSignals.length).toFixed(2))
       : 0;
 
     // Average Conviction Score
     const avgConviction = totalSignals > 0
       ? Math.round(list.reduce((acc, r) => acc + r.convictionScore, 0) / totalSignals)
-      : 85;
+      : 0;
 
     // High conviction accuracy (>= 85%)
     const highConvictionList = list.filter(r => r.convictionScore >= 85);
     const highConvictionSuccess = highConvictionList.filter(r => (r.spotAction === 'SPOT_BUY' && r.pnlPercent >= 0) || (r.spotAction === 'SPOT_SELL_ALL')).length;
     const highConvictionRate = highConvictionList.length > 0
       ? Math.round((highConvictionSuccess / highConvictionList.length) * 100)
-      : 100;
+      : 0;
 
     // Average Planned Risk/Reward Ratio on Buys
     const avgRiskReward = buySignals.length > 0
       ? Number((buySignals.reduce((acc, r) => {
           const risk = Math.abs(r.entryPrice - r.stopLoss);
           const reward = Math.abs(r.target1 - r.entryPrice);
-          return acc + (risk > 0 ? reward / risk : 3.0);
+          return acc + (risk > 0 ? reward / risk : 1.0);
         }, 0) / buySignals.length).toFixed(1))
-      : 3.2;
+      : 0;
 
     return {
       totalSignals,
@@ -599,7 +469,16 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#181818]">
-              {filteredRecords.map((rec) => {
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-500 font-sans">
+                    {lang === 'ar'
+                      ? 'لا توجد إشارات محفوظة مسجلة حالياً في السجل المباشر.'
+                      : 'No persisted signals currently recorded in live history.'}
+                  </td>
+                </tr>
+              ) : (
+                filteredRecords.map((rec) => {
                 const isBuy = rec.spotAction === 'SPOT_BUY';
                 return (
                   <tr key={rec.id} className="hover:bg-[#111114] transition-colors">
@@ -633,7 +512,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
                     {/* Entry Price */}
                     <td className="py-3 text-right">
                       <div className="text-white font-bold">${rec.entryPrice.toLocaleString()}</div>
-                      <div className="text-[10px] text-gray-500">{isBuy ? 'دخول نظري' : 'تسييل نظري'}</div>
+                      <div className="text-[10px] text-gray-500">{isBuy ? 'دخول حقيقي' : 'تسييل حقيقي'}</div>
                     </td>
 
                     {/* Current / Peak */}
@@ -652,7 +531,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
                           <div className="text-[10px] text-rose-400">SL: ${rec.stopLoss.toLocaleString()}</div>
                         </>
                       ) : (
-                        <div className="text-gray-400 text-[11px] font-sans">حماية افتراضية</div>
+                        <div className="text-gray-400 text-[11px] font-sans">حماية رأس المال</div>
                       )}
                     </td>
 
@@ -665,7 +544,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
                             {rec.pnlPercent >= 0 ? `+${rec.pnlPercent}%` : `${rec.pnlPercent}%`}
                           </span>
                           <div className="text-[10px] text-gray-400 font-sans mt-0.5">
-                            أقصى ربح نظري: +{rec.maxFavorableExcursionPercent}%
+                            أقصى ربح: +{rec.maxFavorableExcursionPercent}%
                           </div>
                         </div>
                       ) : (
@@ -675,7 +554,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
                             حماية
                           </span>
                           <div className="text-[10px] text-gray-400 font-sans mt-0.5">
-                            تفادي هبوط نظري: ~{rec.drawdownSavedPercent}%
+                            تفادي هبوط: ~{rec.drawdownSavedPercent}%
                           </div>
                         </div>
                       )}
@@ -683,7 +562,7 @@ export const SignalSuccessMetricsPanel: React.FC<SignalSuccessMetricsPanelProps>
 
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

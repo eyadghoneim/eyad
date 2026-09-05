@@ -133,7 +133,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
       pnlPercent: Number(pnlPercent.toFixed(2)),
       status: isWin ? 'CLOSED_WIN' : 'CLOSED_LOSS',
       durationHours: Math.max(1, Math.round((Date.now() - pos.entryTime) / (3600 * 1000))),
-      signalConfidence: currentSignal?.convictionScore || 88,
+      signalConfidence: currentSignal?.convictionScore ?? 0,
       confluenceReason: `${reason} (Exit @ $${exitPrice.toLocaleString()})`,
       marketCondition: 'STRONG_TREND',
       partialExitTaken: pos.partialSold,
@@ -191,7 +191,7 @@ export const PaperTradingPanel: React.FC<PaperTradingPanelProps> = ({
   const handleCleanGlitchedTrades = () => {
     setPaperAccount((prev) => {
       const validHistory = prev.tradeHistory.filter((t) => {
-        const isGlitch = (t.asset === 'ETH' && t.exitPrice > 4000) || Math.abs(t.pnlPercent) > 50;
+        const isGlitch = (t.asset === 'ETH' && typeof t.exitPrice === 'number' && t.exitPrice > 4000) || Math.abs(t.pnlPercent) > 50;
         return !isGlitch;
       });
       const newRealized = Number(validHistory.reduce((acc, t) => acc + t.pnlUsd, 0).toFixed(2));

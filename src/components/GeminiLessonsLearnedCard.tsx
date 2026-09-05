@@ -31,6 +31,7 @@ import {
   GeminiSuccessPattern,
   GeminiErrorPattern
 } from '../types';
+import { getBotAdminHeaders } from '../utils/botAdminAuth';
 
 interface GeminiLessonsLearnedCardProps {
   trades: TradeRecord[];
@@ -59,6 +60,7 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
   const [hoursApplied, setHoursApplied] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [analysis, setAnalysis] = useState<GeminiLessonsLearnedAnalysis | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Load persistent cache from localStorage on mount
   useEffect(() => {
@@ -202,19 +204,20 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
   // Run deep Gemini analysis on demand
   const handleRunAnalysis = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       let targetTrades: any[] = [];
       if (selectedSource === 'backtest') {
         targetTrades = trades;
       } else if (selectedSource === 'paper') {
-        targetTrades = paperTrades.length > 0 ? paperTrades : trades.slice(0, 15);
+        targetTrades = paperTrades.length > 0 ? paperTrades : [];
       } else {
         targetTrades = [...trades, ...paperTrades];
       }
 
       const res = await fetch('/api/intelligence/analyze-trade-history', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           trades: targetTrades,
           asset: currentAsset,
@@ -222,18 +225,33 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
         }),
       });
 
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data) {
-          setAnalysis(json.data);
-          try {
-            localStorage.setItem(`gemini_trade_lessons_${currentAsset}`, JSON.stringify(json.data));
-            confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-          } catch (e) {}
+      if (!res.ok) {
+        if (res.status === 400) {
+          setError(
+            lang === 'ar'
+              ? 'لا توجد صفقات كافية لإجراء التحليل. أجرِ بعض الصفقات التجريبية أولاً.'
+              : 'Not enough trades for analysis. Run some paper trades first.'
+          );
+        } else if (res.status === 401) {
+          setError(lang === 'ar' ? 'مطلوب توكن الإدارة.' : 'Admin token required.');
+        } else {
+          setError(lang === 'ar' ? `تعذّر التحليل (${res.status}).` : `Analysis failed (${res.status}).`);
         }
+        return;
       }
-    } catch (err) {
+
+      const json = await res.json();
+      if (json.data) {
+        setAnalysis(json.data);
+        setError(null);
+        try {
+          localStorage.setItem(`gemini_trade_lessons_${currentAsset}`, JSON.stringify(json.data));
+          confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+        } catch (e) {}
+      }
+    } catch (err: any) {
       console.error('Gemini trade history analysis failed', err);
+      setError(lang === 'ar' ? 'تعذر الاتصال بالخادم لإجراء التحليل.' : 'Connection failed during analysis.');
     } finally {
       setIsLoading(false);
     }
@@ -402,6 +420,14 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
           </button>
         </div>
       </div>
+
+      {/* Error Alert Bar */}
+      {error && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-950/40 border border-amber-500/50 text-amber-200 text-xs font-sans relative z-10">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* Executive Summary & Key Metric Highlights */}
       {analysis && (

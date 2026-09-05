@@ -456,8 +456,9 @@ export async function pruneData(): Promise<void> {
 }
 
 export async function getPersistenceHealth(): Promise<PersistenceHealth> {
+  const isCloud = Boolean(db);
   const health: PersistenceHealth = {
-    databasePath: 'Firebase Firestore',
+    databasePath: isCloud ? 'Firebase Firestore (Cloud)' : `Local JSON Storage (${LOCAL_DATA_DIR})`,
     databaseSizeBytes: 0,
     walSizeBytes: 0,
     signalRows: 0,
@@ -466,7 +467,11 @@ export async function getPersistenceHealth(): Promise<PersistenceHealth> {
     lastPrunedAt: Number(await getMeta('last_pruned_at', '0') || 0),
     schemaVersion: 3,
   };
-  if (!db) return health;
+  if (!db) {
+    health.signalRows = loadLocalList<PersistedBotSignal>(LOCAL_SIGNALS_FILE).length;
+    health.logRows = loadLocalList<ServerBotLog>(LOCAL_LOGS_FILE).length;
+    return health;
+  }
   try {
     health.signalRows = (await getCountFromServer(collection(db, 'bot_signals'))).data().count;
     health.logRows = (await getCountFromServer(collection(db, 'bot_logs'))).data().count;
@@ -584,7 +589,8 @@ export async function listNotifications(limit = 100): Promise<NotificationRecord
 }
 
 export function getDbPath() {
-  return 'Firebase Firestore';
+  if (db) return 'Firebase Firestore (Cloud)';
+  return `Local JSON Storage (${LOCAL_DATA_DIR})`;
 }
 
 export interface ServerPaperAccount {

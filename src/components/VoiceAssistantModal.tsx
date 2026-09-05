@@ -48,16 +48,23 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   // Construct audio script based on active asset
   const getSpeechScript = () => {
     const assetNameAr = currentAsset === 'BTC' ? 'البيتكوين' : currentAsset === 'ETH' ? 'الإيثريوم' : 'الذهب الرقمي باكس جولد';
-    const entry = aiSignal?.entryPrice || btcPrice;
-    const tp1 = aiSignal?.target1 || Math.round(btcPrice * 1.035);
-    const tp2 = aiSignal?.target2 || Math.round(btcPrice * 1.07);
-    const sl = aiSignal?.stopLoss || Math.round(btcPrice * 0.974);
-    const score = aiSignal?.convictionScore || 88;
+    
+    if (!aiSignal) {
+      return lang === 'ar'
+        ? `مرحباً بك في نظام إياد بوت. السعر الحالي لـ ${assetNameAr} هو ${btcPrice.toLocaleString()} دولار. لا توجد إشارة تحليلية بعد، لذلك لا يمكن الإعلان عن أهداف أو نسبة ثقة. شغّل التحليل أولاً.`
+        : `Welcome to EYAD Research Bot. Current ${currentAsset} price is ${btcPrice.toLocaleString()} dollars. No analytical signal yet, so no targets or conviction can be announced.`;
+    }
+
+    const entry = aiSignal.entryPrice;
+    const tp1 = aiSignal.target1;
+    const tp2 = aiSignal.target2;
+    const sl = aiSignal.stopLoss;
+    const score = aiSignal.convictionScore;
 
     if (lang === 'ar') {
-      return `مرحباً بك في نظام إياد بوت للمحاكاة والتحليل. التحليل المباشر لـ ${assetNameAr}. السعر الحالي هو ${btcPrice.toLocaleString()} دولار. حالة الإشارة محاكاة شراء مع نسبة ثقة ${score} بالمئة. سعر الدخول المعتمد ${entry.toLocaleString()} دولار. الهدف المرجعي الأول عند ${tp1.toLocaleString()} دولار. الهدف الثاني عند ${tp2.toLocaleString()} دولار. مع تطبيق وقف نظري عند ${sl.toLocaleString()} دولار، وتتبع آلي بعد الهدف الأول.`;
+      return `مرحباً بك في نظام إياد بوت للمحاكاة والتحليل. التحليل المباشر لـ ${assetNameAr}. السعر الحالي هو ${btcPrice.toLocaleString()} دولار. حالة الإشارة ${aiSignal.signalType} مع نسبة ثقة ${score} بالمئة. سعر الدخول المعتمد ${entry.toLocaleString()} دولار. الهدف المرجعي الأول عند ${tp1.toLocaleString()} دولار. الهدف الثاني عند ${tp2.toLocaleString()} دولار. مع تطبيق وقف نظري عند ${sl.toLocaleString()} دولار، وتتبع آلي بعد الهدف الأول.`;
     } else {
-      return `Welcome to EYAD Research Bot. Live analysis for ${currentAsset}. Current price is ${btcPrice.toLocaleString()} dollars. Signal state is Simulated Buy with ${score}% conviction. Entry target at ${entry.toLocaleString()} dollars. Reference target 1 at ${tp1.toLocaleString()} dollars. Stop limit theoretically placed at ${sl.toLocaleString()} dollars with 2% trailing protection.`;
+      return `Welcome to EYAD Research Bot. Live analysis for ${currentAsset}. Current price is ${btcPrice.toLocaleString()} dollars. Signal state is ${aiSignal.signalType} with ${score}% conviction. Entry target at ${entry.toLocaleString()} dollars. Reference target 1 at ${tp1.toLocaleString()} dollars. Stop limit theoretically placed at ${sl.toLocaleString()} dollars with 2% trailing protection.`;
     }
   };
 

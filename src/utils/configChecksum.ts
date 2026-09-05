@@ -144,8 +144,8 @@ export function extractLocalSyncableConfig(): SyncableBotConfig {
       telegramChatId = String(p.telegramChatId || '').trim();
       telegramEnabled = Boolean(p.telegramEnabled);
       scanIntervalSeconds = Number(p.autoScanIntervalSeconds) || 60;
-      if (p.telegramTiers || p.telegramAlertTiers) {
-        telegramAlertTiers = { ...telegramAlertTiers, ...(p.telegramTiers || p.telegramAlertTiers) };
+      if (p.telegramAlertTiers) {
+        telegramAlertTiers = { ...telegramAlertTiers, ...p.telegramAlertTiers };
       }
     }
   } catch {}

@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { SupportedAsset } from '../types';
+import { getBotAdminHeaders } from '../utils/botAdminAuth';
 
 export interface ActionableInsightData {
   executiveSummaryAr: string;
@@ -90,7 +91,7 @@ export const GeminiInsightsPanel: React.FC<GeminiInsightsPanelProps> = ({
     try {
       const response = await fetch(`/api/gemini/actionable-insights?asset=${assetToQuery}`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
       });
       if (!response.ok) {
         throw new Error(`HTTP error ${response.status}`);

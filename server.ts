@@ -1,5 +1,6 @@
 import express, { NextFunction, Request } from 'express';
 import path from 'path';
+import { timingSafeEqual } from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
@@ -44,7 +45,7 @@ import {
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));
@@ -55,7 +56,7 @@ app.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production') {
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self' https: data: blob:; connect-src 'self' https://api.binance.com https://api.coinbase.com https://api.coingecko.com https://api.telegram.org https://api.alternative.me; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; font-src 'self' data: https:; frame-ancestors *; base-uri 'self'; form-action 'self';"
+      "default-src 'self' https: data: blob:; connect-src 'self' https://api.binance.com https://api.coinbase.com https://api.coingecko.com https://api.telegram.org https://api.alternative.me https://*.run.app; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; font-src 'self' data: https:; frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.run.app; base-uri 'self'; form-action 'self';"
     );
   }
   next();
@@ -64,6 +65,16 @@ app.use((req, res, next) => {
 const BOT_ADMIN_TOKEN = (process.env.BOT_ADMIN_TOKEN || '').trim();
 const requestBuckets = new Map<string, { count: number; resetAt: number }>();
 let refreshRuntimeLogsCache: (() => void) | null = null;
+
+// Periodic cleanup of expired rate limiter buckets every 60 seconds (prevents memory leak)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of requestBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      requestBuckets.delete(key);
+    }
+  }
+}, 60_000).unref();
 
 function persistSecurityLog(type: ServerBotLog['type'], message: string, asset?: string) {
   const logItem: ServerBotLog = {
@@ -99,12 +110,23 @@ function createRateLimitMiddleware(scope: string, max: number, windowMs: number)
   };
 }
 
+function safeTokenCompare(provided: string, expected: string): boolean {
+  if (!provided || !expected) return false;
+  const bufA = Buffer.from(provided);
+  const bufB = Buffer.from(expected);
+  if (bufA.length !== bufB.length) {
+    // Perform dummy constant-time comparison to prevent length-based timing leak
+    const dummy = Buffer.alloc(bufB.length);
+    timingSafeEqual(bufB, dummy);
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
+
 function extractAdminToken(req: Request) {
   const headerToken = req.header('x-bot-admin-token') || '';
   const bearerToken = (req.header('authorization') || '').replace(/^Bearer\s+/i, '');
-  const queryToken = typeof req.query.token === 'string' ? req.query.token : (typeof req.query.admin_token === 'string' ? req.query.admin_token : '');
-  const bodyToken = typeof (req.body as any)?.token === 'string' ? (req.body as any).token : (typeof (req.body as any)?.admin_token === 'string' ? (req.body as any).admin_token : '');
-  return (headerToken || bearerToken || queryToken || bodyToken).trim();
+  return (headerToken || bearerToken).trim();
 }
 
 function requireBotAdmin(req: Request, res: any, next: NextFunction) {
@@ -112,7 +134,8 @@ function requireBotAdmin(req: Request, res: any, next: NextFunction) {
     persistSecurityLog('SECURITY', `Unauthorized request blocked: No admin token configured on server for ${req.method} ${req.path}`);
     return res.status(401).json({ success: false, error: 'Unauthorized: Bot admin token not configured' });
   }
-  if (extractAdminToken(req) === BOT_ADMIN_TOKEN) return next();
+  const candidateToken = extractAdminToken(req);
+  if (safeTokenCompare(candidateToken, BOT_ADMIN_TOKEN)) return next();
   persistSecurityLog('SECURITY', `Unauthorized request blocked for ${req.method} ${req.path}`);
   return res.status(401).json({ success: false, error: 'Unauthorized bot admin request' });
 }
@@ -138,6 +161,8 @@ function readOptionalInteger(value: unknown, min: number, max: number) {
 
 const notificationRateLimit = createRateLimitMiddleware('notifications', 40, 60_000);
 const botRateLimit = createRateLimitMiddleware('bot-admin', 180, 60_000);
+const geminiRateLimit = createRateLimitMiddleware('gemini', 20, 60_000);
+const intelligenceRateLimit = createRateLimitMiddleware('intelligence', 20, 60_000);
 
 // Initialize Gemini AI Client with standard user-agent
 const ai = new GoogleGenAI({
@@ -209,6 +234,8 @@ app.get('/api/market/btc-live', async (req, res) => {
         source: `Binance Live API (${asset}/USDT)`,
         asset,
         price,
+        isFallback: false,
+        priceSource: 'live_binance',
         change24h: parseFloat(tickerData.priceChangePercent),
         high24h: parseFloat(tickerData.highPrice),
         low24h: parseFloat(tickerData.lowPrice),
@@ -233,6 +260,8 @@ app.get('/api/market/btc-live', async (req, res) => {
         source: `Coinbase Spot API (${asset}/USD)`,
         asset,
         price,
+        isFallback: false,
+        priceSource: 'live_coinbase',
         change24h: 1.25,
         high24h: price * 1.018,
         low24h: price * 0.985,
@@ -257,6 +286,8 @@ app.get('/api/market/btc-live', async (req, res) => {
           source: `CoinGecko Live API (${asset})`,
           asset,
           price: coin.usd,
+          isFallback: false,
+          priceSource: 'live_coingecko',
           change24h: coin.usd_24h_change || 0.5,
           high24h: coin.usd * 1.02,
           low24h: coin.usd * 0.98,
@@ -277,6 +308,9 @@ app.get('/api/market/btc-live', async (req, res) => {
     source: `Market Feed Engine (${asset}/USDT)`,
     asset,
     price: defPrice,
+    isFallback: true,
+    priceSource: 'fallback_offline',
+    fallbackNotice: 'Offline cached fallback price: live upstream exchanges unreachable',
     change24h: 1.84,
     high24h: defPrice * 1.015,
     low24h: defPrice * 0.985,
@@ -296,6 +330,7 @@ app.get('/api/market/historical', async (req, res) => {
     BTC: 'BTCUSDT',
     ETH: 'ETHUSDT',
     PAXG: 'PAXGUSDT',
+    SOL: 'SOLUSDT',
   };
 
   const symbol = symbolMap[asset] || 'BTCUSDT';
@@ -329,7 +364,7 @@ app.get('/api/market/historical', async (req, res) => {
       });
     }
   } catch (err: any) {
-    // Fallback to error response so backtest knows historical data failed
+    console.error('[/api/market/historical] Binance fetch failed:', err?.message || err);
   }
 
   return res.status(502).json({
@@ -341,12 +376,13 @@ app.get('/api/market/historical', async (req, res) => {
 
 // 2.5 Multi-Asset Real-Time Tickers Endpoint
 app.get('/api/market/all-assets', async (req, res) => {
-  const assets = ['BTC', 'ETH', 'PAXG'];
-  const symbols = ['BTCUSDT', 'ETHUSDT', 'PAXGUSDT'];
-  const fallbacks: Record<string, { price: number; change24h: number }> = {
-    BTC: { price: 77696.0, change24h: 1.84 },
-    ETH: { price: 2436.0, change24h: 2.45 },
-    PAXG: { price: 4456.0, change24h: 0.65 },
+  const assets = ['BTC', 'ETH', 'PAXG', 'SOL'];
+  const symbols = ['BTCUSDT', 'ETHUSDT', 'PAXGUSDT', 'SOLUSDT'];
+  const fallbacks: Record<string, { price: number; change24h: number; isFallback: boolean }> = {
+    BTC: { price: 0, change24h: 0, isFallback: true },
+    ETH: { price: 0, change24h: 0, isFallback: true },
+    PAXG: { price: 0, change24h: 0, isFallback: true },
+    SOL: { price: 0, change24h: 0, isFallback: true },
   };
 
   try {
@@ -364,6 +400,7 @@ app.get('/api/market/all-assets', async (req, res) => {
         let assetKey = 'BTC';
         if (symbol === 'ETHUSDT') assetKey = 'ETH';
         if (symbol === 'PAXGUSDT') assetKey = 'PAXG';
+        if (symbol === 'SOLUSDT') assetKey = 'SOL';
 
         result[assetKey] = {
           price: parseFloat(item.lastPrice),
@@ -373,13 +410,13 @@ app.get('/api/market/all-assets', async (req, res) => {
         };
       });
 
-      return res.json({ success: true, assets: result, source: 'Binance Multi-Ticker API' });
+      return res.json({ success: true, assets: result, source: 'Binance Multi-Ticker API', isFallback: false });
     }
   } catch (err) {
     // fallback below
   }
 
-  return res.json({ success: true, assets: fallbacks, source: 'Fallback Local Feed' });
+  return res.json({ success: true, assets: fallbacks, source: 'Fallback Local Feed', isFallback: true });
 });
 
 // 2.6 DefiLlama Liquidity & Activity Proxy Routes
@@ -706,43 +743,11 @@ app.get('/api/market/sentiment', async (req, res) => {
     // fallback
   }
 
-  const headlines = [
-    {
-      title: 'Institutional Bitcoin Spot ETFs Record Over $480M Daily Inflows as Reserve Demand Expands',
-      source: 'Bloomberg Crypto',
-      time: '12 دقيقة مضت',
-      impact: 'BULLISH',
-    },
-    {
-      title: 'Bitcoin Hashrate Reaches New All-Time High Signaling Robust Miner Security & Network Health',
-      source: 'CoinDesk',
-      time: '45 دقيقة مضت',
-      impact: 'BULLISH',
-    },
-    {
-      title: 'SMC Liquidity Map Indicates Heavy Short Squeeze Zones Clustered Above Key Resistance',
-      source: 'CryptoQuant',
-      time: 'ساعتان مضت',
-      impact: 'BULLISH',
-    },
-    {
-      title: 'Federal Reserve Monetary Policy Outlook: Markets Price in Favorable Liquidity Conditions',
-      source: 'Reuters',
-      time: '3 ساعات مضت',
-      impact: 'NEUTRAL',
-    },
-  ];
-
   res.json({
     fearAndGreedIndex: fearGreed,
     fearAndGreedLabel: fearGreedLabel,
-    orderBookImbalance: 28, // +28% Bid dominant
-    estimatedFundingRate: 0.0085,
-    exchangeInflowOutflow: 'NET_OUTFLOW', // Bullish: BTC moving to cold wallets
-    mvrvScore: 2.14,
-    cvdTrend: 'RISING',
-    newsSentimentScore: 78,
-    recentHeadlines: headlines,
+    recentHeadlines: [],
+    isSimulated: true,
   });
 });
 
@@ -907,6 +912,7 @@ async function callGeminiWithResilience(prompt: string, temperature = 0.2) {
 }
 
 // 4. Gemini AI Spot Signal Deep Synthesis Endpoint
+app.use('/api/gemini', geminiRateLimit, requireBotAdmin);
 app.post('/api/gemini/analyze-signal', async (req, res) => {
   try {
     const { asset = 'BTC', price = 79473, indicators, smc, elliott, sentiment, learningState, liquidityRegime: providedLiquidityRegime } = req.body;
@@ -1425,26 +1431,35 @@ ${JSON.stringify(signalSummary, null, 2)}
 });
 
 // 5.6 Gemini Flash 3.8 Trade History Deep Analyzer & Lessons Learned Engine
+app.use('/api/intelligence', intelligenceRateLimit, requireBotAdmin);
 app.post('/api/intelligence/analyze-trade-history', async (req, res) => {
   try {
     const { trades = [], asset = 'BTC', source = 'backtest', currentState } = req.body || {};
 
     // 1. Quantitative trade statistics computation
     const totalTrades = trades.length;
+    if (totalTrades === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No trades provided for analysis',
+        errorAr: 'لا توجد صفقات كافية لإجراء التحليل. أجرِ بعض الصفقات التجريبية أولاً.',
+      });
+    }
+
     const wins = trades.filter((t: any) => t.status === 'CLOSED_WIN' || (t.pnlUsd && t.pnlUsd > 0));
     const losses = trades.filter((t: any) => t.status === 'CLOSED_LOSS' || (t.pnlUsd && t.pnlUsd < 0));
     const winCount = wins.length;
     const lossCount = losses.length;
-    const winRate = totalTrades > 0 ? Math.round((winCount / totalTrades) * 100) : 68;
+    const winRate = totalTrades > 0 ? Math.round((winCount / totalTrades) * 100) : 0;
 
     const totalPnlUsd = trades.reduce((acc: number, t: any) => acc + (t.pnlUsd || 0), 0);
     const totalPnlPercent = trades.reduce((acc: number, t: any) => acc + (t.pnlPercent || 0), 0);
-    const avgWin = winCount > 0 ? wins.reduce((acc: number, t: any) => acc + (t.pnlPercent || 0), 0) / winCount : 3.4;
-    const avgLoss = lossCount > 0 ? losses.reduce((acc: number, t: any) => acc + (t.pnlPercent || 0), 0) / lossCount : -1.8;
+    const avgWin = winCount > 0 ? wins.reduce((acc: number, t: any) => acc + (t.pnlPercent || 0), 0) / winCount : 0;
+    const avgLoss = lossCount > 0 ? losses.reduce((acc: number, t: any) => acc + (t.pnlPercent || 0), 0) / lossCount : 0;
 
     const grossProfit = wins.reduce((acc: number, t: any) => acc + Math.max(0, t.pnlUsd || 0), 0);
     const grossLoss = Math.abs(losses.reduce((acc: number, t: any) => acc + Math.min(0, t.pnlUsd || 0), 0));
-    const profitFactor = grossLoss > 0 ? parseFloat((grossProfit / grossLoss).toFixed(2)) : 2.45;
+    const profitFactor = grossLoss > 0 ? parseFloat((grossProfit / grossLoss).toFixed(2)) : 0;
 
     // Hourly loss distribution
     const hourlyLossCount: Record<number, number> = {};
@@ -1499,26 +1514,18 @@ app.post('/api/intelligence/analyze-trade-history', async (req, res) => {
 مهمتك: استخدام قدرات نموذج "Gemini Flash 3.8" لإجراء فحص استقرائي شامل ومتقدم لسجل الصفقات التاريخي (Trade History Audit) للأصل (${asset}) من مصدر (${source}).
 
 البيانات الإحصائية لسجل الصفقات:
-- إجمالي الصفقات: ${totalTrades || 42} صفقة
-- نسبة الصفقات الرابحة (Win Rate): ${winRate}% (${winCount || 29} رابحة مقابل ${lossCount || 13} خاسرة)
+- إجمالي الصفقات: ${totalTrades} صفقة
+- نسبة الصفقات الرابحة (Win Rate): ${winRate}% (${winCount} رابحة مقابل ${lossCount} خاسرة)
 - إجمالي العائد المحقق (Net PnL): $${totalPnlUsd.toFixed(2)} (+${totalPnlPercent.toFixed(2)}%)
 - معامل الربحية (Profit Factor): ${profitFactor}
 - متوسط الصفقة الرابحة: +${avgWin.toFixed(2)}% | متوسط الصفقة الخاسرة: ${avgLoss.toFixed(2)}%
-- الساعات الأكثر تسبباً في الخسائر (UTC): ${lossHours.length ? lossHours.join(':00, ') + ':00 UTC' : '13:00 UTC, 14:00 UTC'}
+- الساعات الأكثر تسبباً في الخسائر (UTC): ${lossHours.length ? lossHours.join(':00, ') + ':00 UTC' : 'لا يوجد نمط زمني واضح'}
 
 عينة من أهم الصفقات الرابحة:
-${JSON.stringify(sampleWins.length ? sampleWins : [
-  { date: '2024-03-12', hour: 8, entryPrice: 65200, exitPrice: 68900, pnlPercent: 5.67, confluenceReason: 'Deep Discount SMC Sweep + RSI Divergence', marketCondition: 'STRONG_TREND' },
-  { date: '2024-05-19', hour: 10, entryPrice: 67100, exitPrice: 70450, pnlPercent: 4.99, confluenceReason: 'Bullish OrderBlock + Net Exchange Outflow', marketCondition: 'STRONG_TREND' },
-  { date: '2024-08-05', hour: 16, entryPrice: 54100, exitPrice: 57800, pnlPercent: 6.84, confluenceReason: 'Capitulation Bottom Sweep + Wave 4 Fibonacci 0.618', marketCondition: 'HIGH_VOLATILITY' }
-], null, 2)}
+${JSON.stringify(sampleWins, null, 2)}
 
 عينة من الصفقات الخاسرة وأسبابها:
-${JSON.stringify(sampleLosses.length ? sampleLosses : [
-  { date: '2024-04-18', hour: 13, entryPrice: 63800, exitPrice: 62500, pnlPercent: -2.03, lossRootCause: 'افتتاح الجلسة الأمريكية وتذبذب عنيف كسر الوقف سريعاً', marketCondition: 'HIGH_VOLATILITY' },
-  { date: '2024-06-22', hour: 14, entryPrice: 64900, exitPrice: 63700, pnlPercent: -1.85, lossRootCause: 'الشراء بالقرب من منطقة عرض Premium مع تباعد سلبي خفي', marketCondition: 'RANGE' },
-  { date: '2024-10-01', hour: 19, entryPrice: 62200, exitPrice: 61100, pnlPercent: -1.77, lossRootCause: 'أخبار اقتصادية مفاجئة رفعت معدل التمويل وأشعلت تصفيات حادة', marketCondition: 'NEWS_SPIKE' }
-], null, 2)}
+${JSON.stringify(sampleLosses, null, 2)}
 
 المطلوب استخراجه بدقة بالغة واحترافية مؤسسية:
 1. "successPatterns": 3 إلى 4 أنماط نجاح رئيسية متكررة حققت أرباحاً مرتفعة، مع توضيح المؤشرات وتأثيرها (HIGH أو VERY_HIGH أو CRITICAL).
@@ -1535,9 +1542,9 @@ ${JSON.stringify(sampleLosses.length ? sampleLosses : [
 {
   "analyzedAt": ${Date.now()},
   "modelUsed": "gemini-3.8-flash",
-  "totalTradesAnalyzed": ${totalTrades || 42},
+  "totalTradesAnalyzed": ${totalTrades},
   "winRate": ${winRate},
-  "totalPnlUsd": ${parseFloat(totalPnlUsd.toFixed(2)) || 1420.50},
+  "totalPnlUsd": ${parseFloat(totalPnlUsd.toFixed(2))},
   "executiveSummaryAr": "ملخص تحليلي تنفيذي بالعربية...",
   "executiveSummaryEn": "Executive analytical summary in English...",
   "successPatterns": [
@@ -1755,19 +1762,30 @@ app.post('/api/notifications/telegram-send', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Telegram Bot Token and Chat ID are required' });
   }
 
+  if (!customMessage && (!signal || typeof signal.signalType !== 'string')) {
+    return res.status(400).json({
+      success: false,
+      error: 'A real signal payload or customMessage is required',
+      errorAr: 'مطلوب إشارة حقيقية أو رسالة مخصصة — لا يتم توليد توصيات افتراضية.',
+    });
+  }
+
+  const fmt = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString() : 'غير متاح');
+
+  const entryVal = typeof price === 'number' && Number.isFinite(price) ? price : signal?.entryPrice;
   const messageText =
     customMessage ||
     `🚀 <b>إشارة جديدة من منصة EYAD Trading</b> ⚡\n\n` +
       `📌 <b>النوع:</b> ${signal?.signalType || 'STRONG BUY'}\n` +
       `💎 <b>العملة:</b> ${signal?.asset || 'BTC'}/USDT\n` +
-      `💰 <b>سعر الدخول:</b> $${(price || signal?.entryPrice || 88500).toLocaleString()}\n\n` +
+      `💰 <b>سعر الدخول:</b> $${fmt(entryVal)}\n\n` +
       `🎯 <b>الأهداف (Take Profit):</b>\n` +
-      `  • الهدف 1: $${(signal?.target1 || 91200).toLocaleString()} (+3.1%)\n` +
-      `  • الهدف 2: $${(signal?.target2 || 94500).toLocaleString()} (+6.8%)\n` +
-      `  • الهدف 3: $${(signal?.target3 || 99000).toLocaleString()} (+11.8%)\n\n` +
-      `🛑 <b>وقف الخسارة (Stop Loss):</b> $${(signal?.stopLoss || 86000).toLocaleString()} (-2.8%)\n` +
+      `  • الهدف 1: $${fmt(signal?.target1)}\n` +
+      `  • الهدف 2: $${fmt(signal?.target2)}\n` +
+      `  • الهدف 3: $${fmt(signal?.target3)}\n\n` +
+      `🛑 <b>وقف الخسارة (Stop Loss):</b> $${fmt(signal?.stopLoss)}\n` +
       `🛡️ <b>إدارة المخاطر:</b> حماية رأس المال وتفعيل الوقف المتحرك بعد الهدف الأول.\n\n` +
-      `🧠 <b>ثقة الذكاء الاصطناعي:</b> ${signal?.convictionScore || 88}%\n` +
+      `🧠 <b>ثقة الذكاء الاصطناعي:</b> ${fmt(signal?.convictionScore)}%\n` +
       `📊 <b>توافق التحليل:</b> SMC + Elliott Waves + Confluence Gate\n\n` +
       `🤖 <i>EYAD Trading Engine v2.6</i>`;
 
@@ -1893,7 +1911,18 @@ app.post('/api/notifications/telegram-test', async (req, res) => {
 
 let botConfig: ServerBotConfig = DEFAULT_BOT_CONFIG;
 const runtimeAssetStates = new Map<string, AssetRuntimeState>();
-const botState = {
+
+interface RuntimeBotState {
+  startedAt: number;
+  lastScanTime: number;
+  scanCount: number;
+  monitoredAssets: string[];
+  lastKnownPrices: Record<string, number>;
+  logs: ServerBotLog[];
+  dbPath: string;
+}
+
+const botState: RuntimeBotState = {
   startedAt: Date.now(),
   lastScanTime: 0,
   scanCount: 0,
@@ -2201,7 +2230,7 @@ app.get('/api/bot/public-status', async (req, res) => {
 });
 
 app.use('/api/bot', botRateLimit, (req, res, next) => {
-  if (req.path === '/public-status' || req.path === '/diagnostics') return next();
+  if (req.path === '/public-status') return next();
   return requireBotAdmin(req as Request, res, next);
 });
 
@@ -2392,6 +2421,7 @@ app.post('/api/bot/config', async (req, res) => {
 });
 
 // 8.5 Server-Synced Paper Account Endpoints
+app.use('/api/paper', botRateLimit, requireBotAdmin);
 app.get('/api/paper/account', async (req, res) => {
   try {
     const account = await loadPaperAccount();
@@ -2669,6 +2699,14 @@ async function initBotState() {
   }
   botState.logs = await listBotLogs(100);
 }
+
+// API 404 handler - must be mounted before Vite middlewares / static serving
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/') && !res.headersSent) {
+    return res.status(404).json({ success: false, error: 'Not found' });
+  }
+  next();
+});
 
 async function startServer() {
   await initBotState();

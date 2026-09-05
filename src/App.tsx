@@ -604,16 +604,10 @@ export function App() {
   const elliott: ElliottWaveAnalysis = analyzeElliottWaves(candles);
 
   const [sentiment, setSentiment] = useState<LiquiditySentimentData>({
-    fearAndGreedIndex: 74,
-    fearAndGreedLabel: 'Greed (طمع معتدل صحي)',
-    orderBookImbalance: 28.4,
-    exchangeInflowOutflow: 'NET_OUTFLOW',
-    cvdTrend: 'RISING_BULLISH',
-    recentHeadlines: [
-      { title: 'صناديق بيتكوين والعملات المشفرة تسجل تدفقات دخول قياسية بقيمة 850 مليون دولار', source: 'Bloomberg', time: 'منذ 15 دقيقة', impact: 'BULLISH' },
-      { title: 'حيتان التداول يواصلون الاحتفاظ والامتناع عن البيع في بورصات التداول', source: 'Glassnode', time: 'منذ 42 دقيقة', impact: 'BULLISH' },
-      { title: 'تراجع ملحوظ في معروض العملات على منصات التداول المركزية لأدنى مستوى في 5 سنوات', source: 'CryptoQuant', time: 'منذ ساعتين', impact: 'BULLISH' },
-    ],
+    fearAndGreedIndex: 50,
+    fearAndGreedLabel: 'Neutral',
+    isSimulated: true,
+    recentHeadlines: [],
   });
 
   // Macro Economic Filter State
@@ -717,46 +711,7 @@ export function App() {
   }, [currentAsset, candles]);
 
   // AI Signal State
-  const [aiSignal, setAiSignal] = useState<AIReasoning | null>({
-    signalType: 'STRONG_BUY',
-    convictionScore: 88,
-    spotAction: 'SPOT_BUY',
-    entryPrice: Math.round(btcPrice),
-    target1: Math.round(btcPrice + 4 * indicators.atr),
-    target2: Math.round(btcPrice + 6 * indicators.atr),
-    target3: Math.round(btcPrice + 8 * indicators.atr),
-    stopLoss: Math.round(btcPrice - 2 * indicators.atr),
-    riskRewardRatio: 3.6,
-    entryQualityScore: {
-      ema21Score: 25,
-      rejectionScore: 20,
-      volumeScore: 15,
-      trendScore: 20,
-      signalScore: 20,
-      totalScore: 85,
-      passed: true,
-    },
-    protectionLayers: [
-      { id: '1', name: 'Entry Quality Gate', status: 'ACTIVE', triggered: false, details: 'Score 85/100 (Min 75)' },
-      { id: '2', name: 'Order Book Wall Detector', status: 'ACTIVE', triggered: false, details: 'No sell wall within 2x ATR' },
-      { id: '3', name: 'Choppy Market Cooldown', status: 'ACTIVE', triggered: false, details: 'Loss streak: 0 (Limit: 3)' },
-      { id: '4', name: 'News Volatility Filter', status: 'ACTIVE', triggered: false, details: 'No high-impact news in next 60m' },
-      { id: '5', name: 'ADX Trend Filter', status: 'ACTIVE', triggered: false, details: 'ADX 28.4 (Threshold ≥20)' },
-      { id: '6', name: 'Dynamic ATR Stop-Loss', status: 'ACTIVE', triggered: false, details: 'Strict 2x ATR Stop' },
-      { id: '7', name: '2% Trailing Stop Post-TP1', status: 'ACTIVE', triggered: false, details: 'Armed for TP1 execution' },
-      { id: '8', name: '24h Asset Trade Cooldown', status: 'ACTIVE', triggered: false, details: '1 trade/day discipline' },
-    ],
-    confluenceFactors: [
-      'توافق مع بوابة المحاكاة بدرجة 85/100',
-      'ارتداد من مستوى EMA21 للمتابعة التحليلية',
-      'مؤشر الاتجاه ADX عند 28.4',
-      'أهداف نظرية للمحاكاة: جني الأرباح 4×ATR و 6×ATR'
-    ],
-    summaryAr: 'تحليل ورقي: السعر يختبر دعم EMA21 مع حجم التداول ومؤشر ADX الصاعد. هذه محاكاة تحليلية فقط ولا تعد إشارة تداول.',
-    summaryEn: 'Paper Analysis: Price retests EMA21 with volume confirmation and ADX > 20. This is an analytical simulation only, not a trading signal.',
-    timestamp: new Date().toISOString(),
-    liquidityRegime: null,
-  });
+  const [aiSignal, setAiSignal] = useState<AIReasoning | null>(null);
 
   // Sound chime helper
   const playAlertSound = useCallback(() => {
@@ -783,7 +738,7 @@ export function App() {
     try {
       const res = await fetch('/api/gemini/analyze-signal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           price: btcPrice,
           candles: candles.slice(-50),
@@ -914,7 +869,7 @@ export function App() {
     try {
       const res = await fetch('/api/gemini/learn-mistakes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getBotAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           trades: backtestResult.trades,
           currentState: learningState,

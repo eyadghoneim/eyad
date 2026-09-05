@@ -384,30 +384,64 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
               {/* Fear and Greed */}
               <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
                 <div className="text-[10px] text-gray-500 uppercase mb-1 font-sans">{lang === 'ar' ? 'مؤشر الخوف والجشع' : 'Fear & Greed Index'}</div>
-                <div className="text-xl font-bold text-yellow-400">{sentiment.fearAndGreedIndex}</div>
-                <div className="text-[11px] font-semibold text-gray-300 mt-0.5">{sentiment.fearAndGreedLabel}</div>
+                <div className="text-xl font-bold text-yellow-400">{sentiment.fearAndGreedIndex ?? 50}</div>
+                <div className="text-[11px] font-semibold text-gray-300 mt-0.5">{sentiment.fearAndGreedLabel || (lang === 'ar' ? 'محايد' : 'Neutral')}</div>
               </div>
 
-              {/* Orderbook Imbalance */}
-              <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
-                <div className="text-[10px] text-gray-500 uppercase mb-1 font-sans">{lang === 'ar' ? 'دفتر الأوامر (Bid/Ask)' : 'Order Book Imbalance'}</div>
-                <div className="text-xl font-bold text-green-400">+{sentiment.orderBookImbalance}%</div>
-                <div className="text-[11px] text-gray-300 mt-0.5">{lang === 'ar' ? 'سيطرة سيولة الشراء' : 'Bid Liquidity Dominant'}</div>
-              </div>
+              {sentiment.isSimulated || sentiment.orderBookImbalance === undefined ? (
+                <div className="bg-[#0c0c0c] p-3 rounded border border-amber-500/30 sm:col-span-1 md:col-span-3 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-amber-400 text-xs font-sans">
+                    <span className="px-2 py-0.5 rounded bg-amber-500/20 text-[11px] font-bold">
+                      {lang === 'ar' ? 'بيانات دفتر الأوامر والتدفقات المباشرة غير متاحة حالياً' : 'Order Book & Flow metrics currently unavailable'}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Orderbook Imbalance */}
+                  <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
+                    <div className="text-[10px] text-gray-500 uppercase mb-1 font-sans">{lang === 'ar' ? 'دفتر الأوامر (Bid/Ask)' : 'Order Book Imbalance'}</div>
+                    <div className={`text-xl font-bold ${(sentiment.orderBookImbalance ?? 0) >= 0 ? 'text-green-400' : 'text-rose-400'}`}>
+                      {(sentiment.orderBookImbalance ?? 0) > 0 ? '+' : ''}{sentiment.orderBookImbalance ?? 0}%
+                    </div>
+                    <div className="text-[11px] text-gray-300 mt-0.5">
+                      {(sentiment.orderBookImbalance ?? 0) >= 0 
+                        ? (lang === 'ar' ? 'سيطرة سيولة الشراء' : 'Bid Liquidity Dominant')
+                        : (lang === 'ar' ? 'سيطرة سيولة البيع' : 'Ask Liquidity Dominant')}
+                    </div>
+                  </div>
 
-              {/* On-Chain Flow */}
-              <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
-                <div className="text-[10px] text-gray-500 uppercase mb-1 font-sans">{lang === 'ar' ? 'تدفقات المنصات' : 'Exchange Inflow/Outflow'}</div>
-                <div className="text-base font-bold text-green-400">{sentiment.exchangeInflowOutflow}</div>
-                <div className="text-[11px] text-gray-300 mt-0.5">{lang === 'ar' ? 'سحب للمحافظ الباردة' : 'Accumulation Outflows'}</div>
-              </div>
+                  {/* On-Chain Flow */}
+                  <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
+                    <div className="text-[10px] text-gray-500 uppercase mb-1 font-sans">{lang === 'ar' ? 'تدفقات المنصات' : 'Exchange Inflow/Outflow'}</div>
+                    <div className={`text-base font-bold ${sentiment.exchangeInflowOutflow === 'NET_OUTFLOW' ? 'text-green-400' : sentiment.exchangeInflowOutflow === 'NET_INFLOW' ? 'text-rose-400' : 'text-yellow-400'}`}>
+                      {sentiment.exchangeInflowOutflow || 'BALANCED'}
+                    </div>
+                    <div className="text-[11px] text-gray-300 mt-0.5">
+                      {sentiment.exchangeInflowOutflow === 'NET_OUTFLOW' 
+                        ? (lang === 'ar' ? 'سحب للمحافظ الباردة' : 'Accumulation Outflows')
+                        : sentiment.exchangeInflowOutflow === 'NET_INFLOW'
+                        ? (lang === 'ar' ? 'إيداع على المنصات' : 'Exchange Inflows')
+                        : (lang === 'ar' ? 'تدفقات متوازنة' : 'Balanced Flow')}
+                    </div>
+                  </div>
 
-              {/* CVD Trend */}
-              <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
-                <div className="text-[10px] text-gray-500 uppercase mb-1 font-sans">{lang === 'ar' ? 'السيولة التراكمية (CVD)' : 'Cumulative Volume Delta'}</div>
-                <div className="text-xl font-bold text-cyan-400">{sentiment.cvdTrend}</div>
-                <div className="text-[11px] text-gray-300 mt-0.5">{lang === 'ar' ? 'شراء عدواني' : 'Aggressive Market Buys'}</div>
-              </div>
+                  {/* CVD Trend */}
+                  <div className="bg-[#0c0c0c] p-3 rounded border border-[#222]">
+                    <div className="text-[10px] text-gray-500 uppercase mb-1 font-sans">{lang === 'ar' ? 'السيولة التراكمية (CVD)' : 'Cumulative Volume Delta'}</div>
+                    <div className={`text-xl font-bold ${sentiment.cvdTrend === 'RISING' ? 'text-cyan-400' : sentiment.cvdTrend === 'FALLING' ? 'text-rose-400' : 'text-gray-400'}`}>
+                      {sentiment.cvdTrend || 'NEUTRAL'}
+                    </div>
+                    <div className="text-[11px] text-gray-300 mt-0.5">
+                      {sentiment.cvdTrend === 'RISING'
+                        ? (lang === 'ar' ? 'شراء عدواني' : 'Aggressive Market Buys')
+                        : sentiment.cvdTrend === 'FALLING'
+                        ? (lang === 'ar' ? 'بيع عدواني' : 'Aggressive Market Sells')
+                        : (lang === 'ar' ? 'ضغط متوازن' : 'Neutral Flow')}
+                    </div>
+                  </div>
+                </>
+              )}
 
             </div>
 
@@ -419,19 +453,25 @@ export const AnalysisBreakdown: React.FC<AnalysisBreakdownProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                {sentiment.recentHeadlines.map((news, idx) => (
-                  <div key={idx} className="p-2.5 rounded bg-[#141414] border border-[#222] flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <div className="font-semibold text-gray-200">{news.title}</div>
-                      <div className="text-gray-500 text-[10px] mt-0.5">{news.source} • {news.time}</div>
+                {sentiment.recentHeadlines && sentiment.recentHeadlines.length > 0 ? (
+                  sentiment.recentHeadlines.map((news, idx) => (
+                    <div key={idx} className="p-2.5 rounded bg-[#141414] border border-[#222] flex items-center justify-between gap-3 text-xs">
+                      <div>
+                        <div className="font-semibold text-gray-200">{news.title}</div>
+                        <div className="text-gray-500 text-[10px] mt-0.5">{news.source} • {news.time}</div>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 ${
+                        news.impact === 'BULLISH' ? 'bg-green-900/20 text-green-400 border border-green-500/30' : news.impact === 'BEARISH' ? 'bg-rose-900/20 text-rose-400 border border-rose-500/30' : 'bg-[#1a1a1a] text-gray-400'
+                      }`}>
+                        {news.impact}
+                      </span>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 ${
-                      news.impact === 'BULLISH' ? 'bg-green-900/20 text-green-400 border border-green-500/30' : 'bg-[#1a1a1a] text-gray-400'
-                    }`}>
-                      {news.impact}
-                    </span>
+                  ))
+                ) : (
+                  <div className="p-3 text-center text-xs text-gray-500 font-sans">
+                    {lang === 'ar' ? 'لا توجد أخبار متاحة من مصدر حي حالياً' : 'No live news headlines available currently'}
                   </div>
-                ))}
+                )}
               </div>
             </div>
 

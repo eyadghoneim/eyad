@@ -106,12 +106,13 @@ export interface ElliottWaveAnalysis {
 export interface LiquiditySentimentData {
   fearAndGreedIndex: number;
   fearAndGreedLabel: string;
-  orderBookImbalance: number; // -100 to +100 (Negative: Ask heavy, Positive: Bid heavy)
-  estimatedFundingRate: number; // %
-  exchangeInflowOutflow: 'NET_INFLOW' | 'NET_OUTFLOW' | 'BALANCED';
-  mvrvScore: number;
-  cvdTrend: 'RISING' | 'FALLING' | 'NEUTRAL';
-  newsSentimentScore: number; // -100 to +100
+  isSimulated?: boolean;
+  orderBookImbalance?: number; // -100 to +100 (Negative: Ask heavy, Positive: Bid heavy)
+  estimatedFundingRate?: number; // %
+  exchangeInflowOutflow?: 'NET_INFLOW' | 'NET_OUTFLOW' | 'BALANCED';
+  mvrvScore?: number;
+  cvdTrend?: 'RISING' | 'FALLING' | 'NEUTRAL';
+  newsSentimentScore?: number; // -100 to +100
   recentHeadlines: Array<{
     title: string;
     source: string;
@@ -369,7 +370,7 @@ export interface AlertConfig {
   serverHasTelegramChatId?: boolean;
   maskedTelegramToken?: string;
   maskedTelegramChatId?: string;
-  telegramTiers?: TelegramAlertTiers;
+  telegramAlertTiers?: TelegramAlertTiers;
 }
 
 export interface PaperPosition {
@@ -478,6 +479,9 @@ export interface OrderBookDepth {
   whaleAskWalls: OrderBookLevel[];
   isSellWallBlocking: boolean;
   rule3Passed: boolean;
+  spreadUsd?: number;
+  spreadPercent?: number;
+  spreadStatus?: 'NORMAL_TIGHT' | 'ELEVATED' | 'HIGH_SPREAD_RISK';
   source: string;
   timestamp: number;
 }

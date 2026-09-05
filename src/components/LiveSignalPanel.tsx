@@ -21,7 +21,7 @@ import {
   Award,
   Calendar
 } from 'lucide-react';
-import { AIReasoning, ElliottWaveAnalysis, IndicatorValues, LiquiditySentimentData, SMCAnalysis, LearningState, SupportedAsset, MacroNewsStatus } from '../types';
+import { AIReasoning, ElliottWaveAnalysis, IndicatorValues, LiquiditySentimentData, SMCAnalysis, LearningState, SupportedAsset, MacroNewsStatus, EntryQualityScoreBreakdown } from '../types';
 
 interface LiveSignalPanelProps {
   currentAsset?: SupportedAsset;
@@ -54,32 +54,39 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
   onTriggerGeminiAnalysis,
   onSendTelegramAlert,
 }) => {
-  const signalType = aiSignal?.signalType || 'STRONG_BUY';
-  const conviction = aiSignal?.convictionScore || 88;
-  const isBuy = signalType.includes('BUY');
-  const isSell = signalType.includes('SELL');
+  const hasSignal = Boolean(aiSignal);
+  const signalType = aiSignal?.signalType ?? 'HOLD';
+  const conviction = aiSignal?.convictionScore ?? 0;
+  const isBuy = hasSignal && signalType.includes('BUY');
+  const isSell = hasSignal && signalType.includes('SELL');
+  const entry = aiSignal?.entryPrice ?? null;
+  const target1 = aiSignal?.target1 ?? null;
+  const target2 = aiSignal?.target2 ?? null;
+  const target3 = aiSignal?.target3 ?? null;
+  const stopLoss = aiSignal?.stopLoss ?? null;
+  const riskReward = aiSignal?.riskRewardRatio ?? null;
 
-  const entry = aiSignal?.entryPrice || btcPrice;
-  const atr = indicators?.atr || (btcPrice * 0.015);
-  const target1 = aiSignal?.target1 || Math.round(btcPrice + 4 * atr);
-  const target2 = aiSignal?.target2 || Math.round(btcPrice + 6 * atr);
-  const target3 = aiSignal?.target3 || Math.round(btcPrice + 8 * atr);
-  const stopLoss = aiSignal?.stopLoss || Math.round(btcPrice - 2 * atr);
-  const riskReward = aiSignal?.riskRewardRatio || 3.4;
+  // Safe formatting function for prices and numbers
+  const fmtPrice = (v: number | null) =>
+    typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString() : '—';
 
   const currentHour = new Date().getUTCHours();
   const isHourBanned = learningState.bannedTradingHours.includes(currentHour);
 
   // Strategy Gate Score
-  const quality = aiSignal?.entryQualityScore || {
-    ema21Score: 25,
-    rejectionScore: 20,
-    volumeScore: 15,
-    trendScore: 20,
-    signalScore: 20,
-    totalScore: 85,
-    passed: true,
-  };
+  const rawQuality = aiSignal?.entryQualityScore;
+  const quality: EntryQualityScoreBreakdown =
+    typeof rawQuality === 'object' && rawQuality !== null
+      ? rawQuality
+      : {
+          ema21Score: 0,
+          rejectionScore: 0,
+          volumeScore: 0,
+          trendScore: 0,
+          signalScore: 0,
+          totalScore: typeof rawQuality === 'number' ? rawQuality : 0,
+          passed: typeof rawQuality === 'number' ? rawQuality >= 70 : false,
+        };
 
   return (
     <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded p-4 sm:p-5 relative overflow-hidden">
@@ -96,7 +103,9 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
               <div
                 className={`text-2xl sm:text-3xl font-mono font-bold tracking-tight text-gray-300`}
               >
-                {signalType === 'STRONG_BUY'
+                {!hasSignal
+                  ? 'NO_SIGNAL'
+                  : signalType === 'STRONG_BUY'
                   ? 'BULLISH (PAPER)'
                   : signalType === 'BUY'
                   ? 'LEAN BULLISH'
@@ -126,7 +135,7 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
             <Award className="w-3.5 h-3.5 text-amber-400" />
             <span>Gate: {quality.totalScore}/100</span>
             <span className="text-[10px] px-1 py-0.2 rounded bg-black/40">
-              {quality.passed ? (lang === 'ar' ? 'مؤهل' : 'Passed ≥75') : (lang === 'ar' ? 'مرفوض' : 'Blocked')}
+              {quality.passed ? (lang === 'ar' ? 'مؤهل' : 'Passed ≥70') : (lang === 'ar' ? 'مرفوض' : 'Blocked')}
             </span>
           </div>
 
@@ -187,7 +196,7 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
                 {lang === 'ar' ? 'سعر الدخول' : 'Entry Price'}
               </div>
               <div className="text-sm sm:text-base font-bold text-white">
-                ${entry.toLocaleString()}
+                ${fmtPrice(entry)}
               </div>
               <div className="text-[9px] text-gray-500 mt-0.5 font-sans">
                 {lang === 'ar' ? 'EMA21 Retest Zone' : 'EMA21 Retest'}
@@ -204,10 +213,10 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
                 <span className="text-[9px] px-1 rounded bg-emerald-500/20 text-emerald-300">50%</span>
               </div>
               <div className="text-sm sm:text-base font-bold text-emerald-400">
-                ${target1.toLocaleString()}
+                ${fmtPrice(target1)}
               </div>
               <div className="text-[9px] text-emerald-500 mt-0.5 font-mono">
-                +{(((target1 - entry) / entry) * 100).toFixed(1)}% ({lang === 'ar' ? 'بيع نصف الكمية' : 'Partial Exit'})
+                {target1 !== null && entry ? '+' + (((target1 - entry) / entry) * 100).toFixed(1) + '%' : '—'} ({lang === 'ar' ? 'بيع نصف الكمية' : 'Partial Exit'})
               </div>
             </div>
 
@@ -221,10 +230,10 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
                 <span className="text-[9px] px-1 rounded bg-emerald-500/20 text-emerald-300">Exit</span>
               </div>
               <div className="text-sm sm:text-base font-bold text-emerald-400">
-                ${target2.toLocaleString()}
+                ${fmtPrice(target2)}
               </div>
               <div className="text-[9px] text-emerald-500 mt-0.5 font-mono">
-                +{(((target2 - entry) / entry) * 100).toFixed(1)}%
+                {target2 !== null && entry ? '+' + (((target2 - entry) / entry) * 100).toFixed(1) + '%' : '—'}
               </div>
             </div>
 
@@ -238,10 +247,10 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
                 <span className="text-[9px] px-1 rounded bg-emerald-500/20 text-emerald-300">Trend</span>
               </div>
               <div className="text-sm sm:text-base font-bold text-emerald-400">
-                ${target3.toLocaleString()}
+                ${fmtPrice(target3)}
               </div>
               <div className="text-[9px] text-emerald-500 mt-0.5 font-mono">
-                +{(((target3 - entry) / entry) * 100).toFixed(1)}%
+                {target3 !== null && entry ? '+' + (((target3 - entry) / entry) * 100).toFixed(1) + '%' : '—'}
               </div>
             </div>
 
@@ -258,9 +267,9 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
                   {lang === 'ar' ? 'وقف الخسارة الصارم (2×ATR Stop Loss)' : 'Strict Stop Loss (2x ATR)'}
                 </div>
                 <div className="text-sm font-bold text-rose-400">
-                  ${stopLoss.toLocaleString()}{' '}
+                  ${fmtPrice(stopLoss)}{' '}
                   <span className="text-[11px] font-normal text-rose-500 font-mono">
-                    ({(((stopLoss - entry) / entry) * 100).toFixed(1)}%)
+                    {stopLoss !== null && entry ? `(${(((stopLoss - entry) / entry) * 100).toFixed(1)}%)` : ''}
                   </span>
                 </div>
               </div>
@@ -273,7 +282,7 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
               </div>
               <div className="bg-[#141414] px-2 py-1 rounded border border-[#222] text-gray-300">
                 <span className="text-gray-500 mr-1">R:R:</span>
-                <span className="text-emerald-400 font-bold font-mono">1 : {riskReward}</span>
+                <span className="text-emerald-400 font-bold font-mono">1 : {riskReward ?? '—'}</span>
               </div>
             </div>
           </div>
@@ -341,8 +350,8 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
                 lang === 'ar' ? aiSignal.summaryAr : aiSignal.summaryEn
               ) : (
                 lang === 'ar'
-                  ? 'يظهر السوق تماسكاً مؤسسياً قوياً مع الالتزام التام بقواعد الدخول (بوابة الجودة > 75). وقف الخسارة الصارم عند 2×ATR وأهداف جني الأرباح الجزئية TP1 4×ATR و TP2 6×ATR مفعلة مع الوقف المتحرك 2% لحماية الأرباح.'
-                  : 'Market fulfills the strict Entry Quality Gate requirements (Score > 75). Disciplined 2x ATR stop-loss and partial profit targets (TP1 4x ATR, TP2 6x ATR) active with 2% trailing stop protection.'
+                  ? 'لا توجد إشارة تحليلية نشطة حالياً. يرجى الضغط على "فحص بالذكاء الاصطناعي" لتحليل أحدث بيانات الشموع ومستويات السيولة بدقة.'
+                  : 'No active analytical signal at this moment. Please click "AI Deep Scan" to run a fresh institutional analysis on live candle and liquidity data.'
               )}
             </p>
 
