@@ -15,12 +15,15 @@ export default defineConfig(() => {
       chunkSizeWarningLimit: 900,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor-react': ['react', 'react-dom'],
-            'vendor-charts': ['recharts'],
-            'vendor-motion': ['motion'],
-            'vendor-icons': ['lucide-react'],
-            'vendor-firebase': ['firebase/app', 'firebase/firestore'],
+          // Function form: the object form silently produced no vendor-react chunk
+          // (react/react-dom stayed inlined in the 637KB index bundle), and declared
+          // empty groups for motion/firebase which are not imported from src/ at all.
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return;
+            if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'vendor-react';
+            if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            return 'vendor';
           },
         },
       },

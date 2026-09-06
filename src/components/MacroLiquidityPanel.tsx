@@ -43,7 +43,7 @@ function compactUsd(value: number) {
   return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(value || 0);
 }
 
-export const MacroLiquidityPanel: React.FC<MacroLiquidityPanelProps> = ({ lang }) => {
+const MacroLiquidityPanelImpl: React.FC<MacroLiquidityPanelProps> = ({ lang }) => {
   const [overview, setOverview] = useState<ChainsOverviewResponse | null>(null);
   const [history, setHistory] = useState<ChainHistoryResponse | null>(null);
   const [selectedChain, setSelectedChain] = useState('ethereum');
@@ -140,3 +140,7 @@ export const MacroLiquidityPanel: React.FC<MacroLiquidityPanelProps> = ({ lang }
     </div>
   );
 };
+
+// Memoized: App re-renders on every one of its 30 state hooks / 7 polling timers.
+// Without this the whole panel (and its recharts tree) re-rendered for unrelated updates.
+export const MacroLiquidityPanel = React.memo(MacroLiquidityPanelImpl);

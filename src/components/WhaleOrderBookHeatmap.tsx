@@ -18,7 +18,7 @@ interface WhaleOrderBookHeatmapProps {
   lang: 'ar' | 'en';
 }
 
-export const WhaleOrderBookHeatmap: React.FC<WhaleOrderBookHeatmapProps> = ({
+const WhaleOrderBookHeatmapImpl: React.FC<WhaleOrderBookHeatmapProps> = ({
   currentAsset,
   currentPrice,
   lang,
@@ -267,3 +267,7 @@ export const WhaleOrderBookHeatmap: React.FC<WhaleOrderBookHeatmapProps> = ({
     </div>
   );
 };
+
+// Memoized: App re-renders on every one of its 30 state hooks / 7 polling timers.
+// Without this the whole panel (and its recharts tree) re-rendered for unrelated updates.
+export const WhaleOrderBookHeatmap = React.memo(WhaleOrderBookHeatmapImpl);

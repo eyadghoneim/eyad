@@ -50,7 +50,15 @@ const PORT = Number(process.env.PORT) || 3000;
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store');
+  // Vite emits content-hashed filenames under /assets (e.g. index-dGvpSBT-.js),
+  // so those files can never change identity. Serving them with `no-store` forced
+  // the browser to re-download ~1.1MB of JS/CSS on every single page load.
+  // Everything else (HTML shell + all /api responses) must stay uncached.
+  if (req.path.startsWith('/assets/')) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  } else {
+    res.setHeader('Cache-Control', 'no-store');
+  }
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'same-origin');
   if (process.env.NODE_ENV === 'production') {
@@ -335,7 +343,7 @@ app.get('/api/market/btc-live', async (req, res) => {
   });
 });
 
-// 2.4 Real Historical Market Data Endpoint (Fetches up to 1000 Binance historical Klines for Backtesting)
+// 2.4 Real Historical Market Data Endpoint (Fetches up to 1000 Binance historical Klines, falls back to Coinbase)
 app.get('/api/market/historical', async (req, res) => {
   const asset = ((req.query.asset as string) || 'BTC').toUpperCase();
   const interval = (req.query.interval as string) || '4h';
@@ -350,10 +358,12 @@ app.get('/api/market/historical', async (req, res) => {
 
   const symbol = symbolMap[asset] || 'BTCUSDT';
 
+  // 1. Try Binance REST API with 3.5s timeout
   try {
-    const klinesRes = await fetch(
+    const klinesRes = await fetchWithTimeout(
       `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-      { headers: { 'User-Agent': 'eyad-trading-bot-backtest' } }
+      { headers: { 'User-Agent': 'eyad-trading-bot-backtest' } },
+      3500
     );
 
     if (klinesRes.ok) {
@@ -382,6 +392,63 @@ app.get('/api/market/historical', async (req, res) => {
     console.error('[/api/market/historical] Binance fetch failed:', err?.message || err);
   }
 
+  // 2. Fallback to Coinbase Exchange API (works reliably in cloud environments where Binance IPs are blocked)
+  try {
+    const cbProductMap: Record<string, string> = {
+      BTC: 'BTC-USD',
+      ETH: 'ETH-USD',
+      PAXG: 'PAXG-USD',
+      SOL: 'SOL-USD',
+    };
+    const cbGranularityMap: Record<string, number> = {
+      '1m': 60,
+      '5m': 300,
+      '15m': 900,
+      '1h': 3600,
+      '4h': 21600, // Coinbase does not support 4h; use 21600 (6 hours) as closest supported
+      '1d': 86400,
+    };
+
+    const cbProduct = cbProductMap[asset] || 'BTC-USD';
+    const granularity = cbGranularityMap[interval] || 21600;
+
+    const cbRes = await fetchWithTimeout(
+      `https://api.exchange.coinbase.com/products/${cbProduct}/candles?granularity=${granularity}`,
+      { headers: { 'User-Agent': 'eyad-trading-bot-backtest' } },
+      4000
+    );
+
+    if (cbRes.ok) {
+      const rawCb = await cbRes.json();
+      if (Array.isArray(rawCb) && rawCb.length > 0) {
+        // Coinbase returns [time(s), low, high, open, close, volume] in reverse-chronological order
+        const candles = rawCb
+          .map((k: any) => ({
+            time: k[0] * 1000,
+            low: parseFloat(k[1]),
+            high: parseFloat(k[2]),
+            open: parseFloat(k[3]),
+            close: parseFloat(k[4]),
+            volume: parseFloat(k[5]),
+          }))
+          .sort((a: any, b: any) => a.time - b.time);
+
+        return res.json({
+          success: true,
+          source: 'COINBASE_HISTORICAL',
+          asset,
+          symbol: cbProduct,
+          interval,
+          count: candles.length,
+          candles,
+          timestamp: Date.now(),
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error('[/api/market/historical] Coinbase fallback failed:', err?.message || err);
+  }
+
   return res.status(502).json({
     success: false,
     error: 'Failed to fetch authentic Binance historical candles',
@@ -400,6 +467,7 @@ app.get('/api/market/all-assets', async (req, res) => {
     SOL: { price: 0, change24h: 0, isFallback: true },
   };
 
+  // 1. Try Binance REST API with 3.5s timeout
   try {
     const symbolParams = JSON.stringify(symbols);
     const bRes = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolParams)}`, {
@@ -429,6 +497,68 @@ app.get('/api/market/all-assets', async (req, res) => {
     }
   } catch (err) {
     // fallback below
+  }
+
+  // 2. Fallback to Coinbase Exchange Stats API (unblocked on cloud platforms like Render)
+  try {
+    const cbConfig: Array<{ key: string; product: string }> = [
+      { key: 'BTC', product: 'BTC-USD' },
+      { key: 'ETH', product: 'ETH-USD' },
+      { key: 'PAXG', product: 'PAXG-USD' },
+      { key: 'SOL', product: 'SOL-USD' },
+    ];
+
+    const cbPromises = cbConfig.map(async ({ key, product }) => {
+      const res = await fetchWithTimeout(
+        `https://api.exchange.coinbase.com/products/${product}/stats`,
+        { headers: { 'User-Agent': 'eyad-trading-bot' } },
+        3000
+      );
+      if (!res.ok) throw new Error(`Coinbase stats failed for ${product}: ${res.status}`);
+      const stats = await res.json();
+      const open = parseFloat(stats.open);
+      const last = parseFloat(stats.last);
+      const high = parseFloat(stats.high);
+      const low = parseFloat(stats.low);
+      const change24h = open > 0 ? ((last - open) / open) * 100 : 0;
+      return {
+        key,
+        price: last,
+        change24h,
+        high24h: high,
+        low24h: low,
+      };
+    });
+
+    const settled = await Promise.allSettled(cbPromises);
+    const cbResult: Record<string, { price: number; change24h: number; high24h: number; low24h: number }> = {};
+    let successCount = 0;
+
+    settled.forEach((item) => {
+      if (item.status === 'fulfilled') {
+        const { key, price, change24h, high24h, low24h } = item.value;
+        if (price > 0) {
+          cbResult[key] = { price, change24h, high24h, low24h };
+          successCount++;
+        }
+      }
+    });
+
+    if (successCount >= 2) {
+      for (const a of assets) {
+        if (!cbResult[a]) {
+          cbResult[a] = fallbacks[a] as any;
+        }
+      }
+      return res.json({
+        success: true,
+        assets: cbResult,
+        source: 'Coinbase Exchange Stats API',
+        isFallback: false,
+      });
+    }
+  } catch (err: any) {
+    console.error('[/api/market/all-assets] Coinbase fallback failed:', err?.message || err);
   }
 
   return res.json({ success: true, assets: fallbacks, source: 'Fallback Local Feed', isFallback: true });

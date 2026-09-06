@@ -695,7 +695,22 @@ export function App() {
     }, currentAsset);
   });
 
-  // Recalculate backtest when asset changes
+  // Recalculate backtest ONLY when the candle dataset structurally changes.
+  //
+  // PERFORMANCE CRITICAL: run1YearBacktest costs ~790ms of synchronous main-thread
+  // work on 2191 candles. The previous dependency array was [currentAsset, candles],
+  // and handleFetchLiveData replaces the `candles` array reference every 15s (it
+  // clones the array just to patch the last candle's close price). That made the
+  // whole 1-year backtest re-run 4x per minute and froze the UI each time.
+  //
+  // We depend on a structural signature instead of the array reference, so a mere
+  // last-price tick no longer retriggers it. Switching assets or loading a genuinely
+  // new candle series still does.
+  const backtestSignature = useMemo(
+    () => `${currentAsset}|${candles.length}|${candles[0]?.time ?? 0}|${candles[candles.length - 1]?.time ?? 0}`,
+    [currentAsset, candles]
+  );
+
   useEffect(() => {
     setBacktestResult(run1YearBacktest(candles, {
       periodDays: 365,
@@ -708,7 +723,8 @@ export function App() {
       useSelfLearningFilter: true,
       minConvictionThreshold: 62,
     }, currentAsset));
-  }, [currentAsset, candles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backtestSignature]);
 
   // AI Signal State
   const [aiSignal, setAiSignal] = useState<AIReasoning | null>(null);

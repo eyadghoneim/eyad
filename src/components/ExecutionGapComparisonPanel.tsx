@@ -58,7 +58,7 @@ interface ComparativeTradeRow {
   exitReason: string;
 }
 
-export const ExecutionGapComparisonPanel: React.FC<ExecutionGapComparisonPanelProps> = ({
+const ExecutionGapComparisonPanelImpl: React.FC<ExecutionGapComparisonPanelProps> = ({
   lang,
   currentAsset,
   paperTrades = [],
@@ -808,3 +808,7 @@ export const ExecutionGapComparisonPanel: React.FC<ExecutionGapComparisonPanelPr
     </div>
   );
 };
+
+// Memoized: App re-renders on every one of its 30 state hooks / 7 polling timers.
+// Without this the whole panel (and its recharts tree) re-rendered for unrelated updates.
+export const ExecutionGapComparisonPanel = React.memo(ExecutionGapComparisonPanelImpl);
