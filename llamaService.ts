@@ -53,10 +53,10 @@ async function fetchJsonCached<T = any>(key: string, url: string, ttlMs: number,
     writeCached(key, data, ttlMs);
     return data as T;
   } catch (err: any) {
-    // If we have any stale item in memory, serve it as graceful fallback
+    // If we have any stale item in memory, serve it as graceful fallback and extend TTL slightly to avoid retry thrashing
     const stale = responseCache.get(key);
     if (stale && stale.data) {
-      console.warn(`[llamaService] Serving stale cache for ${key} due to upstream error: ${err.message}`);
+      stale.expiresAt = Date.now() + 2 * 60 * 1000;
       return stale.data as T;
     }
     throw err;
@@ -99,7 +99,7 @@ async function fetchJsonCachedPost<T = any>(key: string, url: string, body: obje
   } catch (err: any) {
     const stale = responseCache.get(key);
     if (stale && stale.data) {
-      console.warn(`[llamaService] Serving stale cache for POST ${key} due to upstream error: ${err.message}`);
+      stale.expiresAt = Date.now() + 2 * 60 * 1000;
       return stale.data as T;
     }
     throw err;
@@ -397,50 +397,49 @@ export async function getOpenInterestOverview() {
   };
 }
 
+// Well-known high-liquidity bridge protocols to query directly without loading the massive 8.8MB /protocols list
+const DEFAULT_BRIDGE_SLUGS = [
+  { slug: 'stargate-v2', name: 'Stargate V2' },
+  { slug: 'layerzero-v2', name: 'LayerZero V2' },
+  { slug: 'across', name: 'Across' },
+  { slug: 'synapse', name: 'Synapse' },
+  { slug: 'portal', name: 'Wormhole Portal' },
+  { slug: 'orbiter-finance', name: 'Orbiter Finance' },
+];
+
 export async function getBridgeFlowOverview() {
   const cachedBridge = readCached<any>('llama:bridge-flow-overview');
   if (cachedBridge) return cachedBridge;
 
   try {
-    const protocols = await fetchJsonCached<any[]>('llama:protocols', 'https://api.llama.fi/protocols', 60 * 60 * 1000, 3000);
-    const preferredSlugs = ['layerzero-v2', 'hyperliquid-bridge', 'ccip', 'portal', 'across', 'synapse', 'orbiter-finance', 'stargate-v2', 'stargate'];
-    const bridgeProtocols = (protocols || [])
-      .filter((item) => String(item?.category || '').toLowerCase() === 'bridge')
-      .filter((item) => Array.isArray(item?.chains) && item.chains.length > 1)
-      .sort((a, b) => toNumber(b?.tvl) - toNumber(a?.tvl));
-
-    const selected = [
-      ...preferredSlugs
-        .map((slug) => bridgeProtocols.find((item) => String(item?.slug || '') === slug))
-        .filter(Boolean),
-      ...bridgeProtocols,
-    ]
-      .filter((item, index, self) => self.findIndex((candidate) => candidate?.slug === item?.slug) === index)
-      .slice(0, 5);
-
     const settledDetails = await Promise.allSettled(
-      selected.map(async (item: any) => {
+      DEFAULT_BRIDGE_SLUGS.map(async (bridge) => {
         try {
-          const detail = await fetchJsonCached<any>(`llama:protocol:${item.slug}`, `https://api.llama.fi/protocol/${encodeURIComponent(item.slug)}`, 60 * 60 * 1000, 2000);
+          const detail = await fetchJsonCached<any>(
+            `llama:protocol:${bridge.slug}`,
+            `https://api.llama.fi/protocol/${encodeURIComponent(bridge.slug)}`,
+            60 * 60 * 1000,
+            4000
+          );
           return buildBridgeFlowSummary(
-            String(detail?.name || item?.name || 'Unknown Bridge'),
-            String(item?.slug || detail?.slug || ''),
-            String(detail?.url || item?.url || ''),
-            toNumber(item?.tvl),
+            String(detail?.name || bridge.name),
+            String(detail?.slug || bridge.slug),
+            String(detail?.url || ''),
+            toNumber(detail?.tvl),
             detail?.chainTvls,
-            detail?.chains || item?.chains || [],
+            detail?.chains || []
           );
         } catch {
           return buildBridgeFlowSummary(
-            String(item?.name || 'Unknown Bridge'),
-            String(item?.slug || ''),
-            String(item?.url || ''),
-            toNumber(item?.tvl),
+            bridge.name,
+            bridge.slug,
+            '',
+            0,
             undefined,
-            item?.chains || [],
+            []
           );
         }
-      }),
+      })
     );
 
     const details = settledDetails
@@ -454,7 +453,7 @@ export async function getBridgeFlowOverview() {
     const result = {
       source: 'DefiLlama Free API',
       updatedAt: Date.now(),
-      bridgeCount: bridgeProtocols.length,
+      bridgeCount: DEFAULT_BRIDGE_SLUGS.length,
       totalBridgeLiquidityUsd: Number(topBridges.reduce((sum, item) => sum + item.currentTvl, 0).toFixed(2)),
       aggregate7dFlowUsd: Number(topBridges.reduce((sum, item) => sum + item.delta7dUsd, 0).toFixed(2)),
       aggregate30dFlowUsd: Number(topBridges.reduce((sum, item) => sum + item.delta30dUsd, 0).toFixed(2)),
@@ -462,14 +461,14 @@ export async function getBridgeFlowOverview() {
       coverageNote: 'Bridge flow cards are derived from free DefiLlama bridge protocol TVL histories and show capital rotation across major bridge venues.',
     };
 
-    writeCached('llama:bridge-flow-overview', result, 15 * 60 * 1000);
+    writeCached('llama:bridge-flow-overview', result, 30 * 60 * 1000);
     return result;
   } catch (err: any) {
     console.warn('[llamaService] Failed fetching bridge flows, using safe fallback:', err?.message);
     const fallback = {
       source: 'DefiLlama Bridge Fallback',
       updatedAt: Date.now(),
-      bridgeCount: 10,
+      bridgeCount: DEFAULT_BRIDGE_SLUGS.length,
       totalBridgeLiquidityUsd: 15000000000,
       aggregate7dFlowUsd: 0,
       aggregate30dFlowUsd: 0,
