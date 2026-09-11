@@ -288,24 +288,32 @@ export function autoOpenPaperTradeOnSignal(
   }
 
   // 2. Correlation Matrix Guard: Prevent overlapping correlated crypto positions
+  let isCorrelatedScaleDown = false;
+  let activeCorrelatedName = '';
   if (account.correlationGuardEnabled !== false && asset !== 'PAXG') {
     // Check if there is already an open position in another crypto asset
     const activeCorrelatedCrypto = account.positions.find((p) => p.asset !== 'PAXG' && p.asset !== asset);
-    if (activeCorrelatedCrypto && aiSignal.convictionScore < 82) {
-      return {
-        updatedAccount: account,
-        opened: false,
-        event: {
-          type: 'ENTRY',
-          asset,
-          price: livePrice,
-          pnlUsd: 0,
-          pnlPercent: 0,
-          messageAr: `⚡ مصفوفة الارتباط (Correlation Guard): توجد صفقة نشطة في ${activeCorrelatedCrypto.asset}. يتطلب فتح ${asset} قوة قناعة استثنائية (≥82%، الحالية: ${aiSignal.convictionScore}%) لمنع مضاعفة مخاطر هبوط السوق الجماعي.`,
-          messageEn: `⚡ Correlation Guard: Active correlated crypto position (${activeCorrelatedCrypto.asset}). Requires ≥82% conviction (${aiSignal.convictionScore}%) to prevent systemic drawdown.`,
-          timestamp: Date.now(),
-        },
-      };
+    if (activeCorrelatedCrypto) {
+      activeCorrelatedName = activeCorrelatedCrypto.asset;
+      if (aiSignal.convictionScore < 82) {
+        return {
+          updatedAccount: account,
+          opened: false,
+          event: {
+            type: 'ENTRY',
+            asset,
+            price: livePrice,
+            pnlUsd: 0,
+            pnlPercent: 0,
+            messageAr: `⚡ مصفوفة الارتباط (Correlation Guard): توجد صفقة نشطة في ${activeCorrelatedCrypto.asset}. يتطلب فتح ${asset} قوة قناعة استثنائية (≥82%، الحالية: ${aiSignal.convictionScore}%) لمنع مضاعفة مخاطر هبوط السوق الجماعي.`,
+            messageEn: `⚡ Correlation Guard: Active correlated crypto position (${activeCorrelatedCrypto.asset}). Requires ≥82% conviction (${aiSignal.convictionScore}%) to prevent systemic drawdown.`,
+            timestamp: Date.now(),
+          },
+        };
+      } else {
+        // High conviction exception (>=82%): Allow entry, but scale allocation down by 50% (ETH lighter when BTC is open)
+        isCorrelatedScaleDown = true;
+      }
     }
   }
 
@@ -432,6 +440,11 @@ export function autoOpenPaperTradeOnSignal(
   const minAllocationUsd = Math.min(account.virtualBalanceUsd, 25);
   let investUsd = Number(Math.min(maxAllocationUsd, Math.max(minAllocationUsd, idealInvestUsd)).toFixed(2));
 
+  // If active correlated crypto is already open (e.g. BTC open, now entering ETH), scale size down by 50%
+  if (isCorrelatedScaleDown) {
+    investUsd = Number(Math.max(15, investUsd * 0.50).toFixed(2));
+  }
+
   // If Tranche mode is active, Tranche 1 takes 60% of total allocation
   const isTranche1 = Boolean(account.trancheModeEnabled);
   if (isTranche1) {
@@ -477,6 +490,8 @@ export function autoOpenPaperTradeOnSignal(
 
   const trancheLabelAr = isTranche1 ? ' (الدفعة 1 - Tranche 1 بنسبة 60%)' : '';
   const trancheLabelEn = isTranche1 ? ' (Tranche 1 - 60% Initial Allocation)' : '';
+  const corrLabelAr = isCorrelatedScaleDown ? ` [⚡ تخفيف الحجم 50% لارتباطه بـ ${activeCorrelatedName}]` : '';
+  const corrLabelEn = isCorrelatedScaleDown ? ` [⚡ 50% Size Scale-Down due to active ${activeCorrelatedName}]` : '';
 
   const event: AutoTradeExecutionResult['events'][0] = {
     type: 'ENTRY',
@@ -484,8 +499,8 @@ export function autoOpenPaperTradeOnSignal(
     price: livePrice,
     pnlUsd: 0,
     pnlPercent: 0,
-    messageAr: `⚡ دخول تلقائي: فتح صفقة ${asset}/USDT بقيمة $${investUsd.toLocaleString()}${trancheLabelAr} بناءً على إشارة البوت (سعر الدخول: $${livePrice.toLocaleString()})`,
-    messageEn: `⚡ Auto Entry: Executed ${asset}/USDT position for $${investUsd.toLocaleString()}${trancheLabelEn} (Entry: $${livePrice.toLocaleString()})`,
+    messageAr: `⚡ دخول تلقائي: فتح صفقة ${asset}/USDT بقيمة $${investUsd.toLocaleString()}${trancheLabelAr}${corrLabelAr} بناءً على إشارة البوت (سعر الدخول: $${livePrice.toLocaleString()})`,
+    messageEn: `⚡ Auto Entry: Executed ${asset}/USDT position for $${investUsd.toLocaleString()}${trancheLabelEn}${corrLabelEn} (Entry: $${livePrice.toLocaleString()})`,
     timestamp: Date.now(),
   };
 

@@ -276,10 +276,17 @@ const mtfSignalResult = buildDeterministicSignal({
   candles: bullishCandles,
   change24h: 3.5,
   higherTimeframeCandles: bearishCandles, // 4h is sharply falling
+  liquidityRegime: {
+    totalAdjustment: 15,
+    highlightsAr: [],
+    highlightsEn: ['Institutional inflows'],
+    summaryAr: '',
+    summaryEn: 'Institutional inflows',
+  },
 });
 assert(
-  mtfSignalResult.signal.regimeGateStatus === 'HTF_BLOCKED' || mtfSignalResult.signal.multiTimeframeBias === 'BEARISH_COUNTERTREND',
-  'MTF Guard detects 4h macro bearish downtrend against 1h bounce'
+  mtfSignalResult.signal.regimeGateStatus === 'HTF_BLOCKED' && mtfSignalResult.signal.multiTimeframeBias === 'BEARISH_COUNTERTREND',
+  'MTF Guard detects 4h macro bearish downtrend against 1h bounce and sets HTF_BLOCKED'
 );
 assert(
   mtfSignalResult.signal.spotAction !== 'SPOT_BUY',
@@ -303,10 +310,17 @@ for (let i = 0; i < 60; i++) {
 const flatResult = buildDeterministicSignal({
   asset: 'BTC',
   candles: flatCandles,
-  change24h: 0.1,
+  change24h: 2.5,
+  liquidityRegime: {
+    totalAdjustment: 20,
+    highlightsAr: [],
+    highlightsEn: ['High volume'],
+    summaryAr: '',
+    summaryEn: 'High liquidity',
+  },
 });
 assert(
-  flatResult.signal.regimeGateStatus === 'CHOP_BLOCKED' || flatResult.signal.spotAction === 'SPOT_HOLD',
+  flatResult.signal.regimeGateStatus === 'CHOP_BLOCKED',
   'Hard Regime Gate blocks buy entries during flat/choppy consolidation (ADX < 18)'
 );
 
@@ -329,6 +343,76 @@ assert(
 assert(
   typeof mtfSignalResult.signal.relativeVolume === 'number' && mtfSignalResult.signal.relativeVolume > 0,
   'Relative Volume (RVOL) is calculated and bounded as positive ratio'
+);
+
+// 6.5 Test v3.0 Engine Model Signature
+assert(
+  mtfSignalResult.signal.modelUsed.includes('v3.0') && mtfSignalResult.signal.modelUsed.includes('MTF+Regime+RVOL+Funding'),
+  'Deterministic engine signs signals with v3.0 (MTF+Regime+RVOL+Funding) signature'
+);
+
+// 6.6 Test Gate-Blocked Signals Retain Full Audit Targets (Entry, SL, TP1, TP2)
+assert(
+  mtfSignalResult.signal.regimeGateStatus === 'HTF_BLOCKED' &&
+  mtfSignalResult.signal.entryPrice > 0 &&
+  mtfSignalResult.signal.stopLoss > 0 &&
+  mtfSignalResult.signal.target1 > 0 &&
+  mtfSignalResult.signal.target2 > 0,
+  'Gate-blocked candidate buy retains non-zero entry, stop-loss, and profit targets for empirical audit'
+);
+
+// 6.7 Test Correlation Guard: Scale down position size by 50% when correlated crypto is active
+const { autoOpenPaperTradeOnSignal } = await import('../src/utils/paperTradingEngine');
+const basePaperAccount = {
+  virtualBalanceUsd: 10000,
+  allocatedCapitalUsd: 1000,
+  totalRealizedPnlUsd: 0,
+  positions: [
+    {
+      id: 'pos_btc_1',
+      asset: 'BTC' as const,
+      entryPrice: 85000,
+      currentPrice: 86000,
+      amount: 0.01176,
+      allocatedUsd: 1000,
+      tp1: 88000,
+      tp2: 91000,
+      stopLoss: 83000,
+      entryTime: Date.now() - 3600 * 1000,
+      unrealizedPnlUsd: 11.76,
+      unrealizedPnlPercent: 1.17,
+      partialSold: false,
+    },
+  ],
+  tradeHistory: [],
+  autoExecuteSignals: true,
+  correlationGuardEnabled: true,
+  trancheModeEnabled: false,
+};
+
+// High-conviction ETH buy signal with BTC position active -> should open, but at half allocation
+const highConvictionEthSignal = {
+  ...mtfSignalResult.signal,
+  asset: 'ETH' as const,
+  convictionScore: 86,
+  spotAction: 'SPOT_BUY' as const,
+  signalType: 'STRONG_BUY' as const,
+  stopLoss: 3000,
+  target1: 3400,
+  target2: 3600,
+};
+
+const corrScaleResult = autoOpenPaperTradeOnSignal(
+  basePaperAccount,
+  'ETH',
+  3200,
+  highConvictionEthSignal,
+  25
+);
+
+assert(
+  corrScaleResult.opened === true && corrScaleResult.event?.messageAr.includes('تخفيف الحجم 50%'),
+  'Correlation Guard halves position size on ETH when BTC position is open and conviction is high'
 );
 
 // -------------------------------------------------------------

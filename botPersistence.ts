@@ -133,6 +133,9 @@ export interface PersistedBotSignal {
   summaryEn: string;
   metadataJson: string;
   dedupHash: string;
+  isGateBlocked?: boolean;
+  regimeGateStatus?: string;
+  blockReason?: string;
 }
 
 export interface AssetRuntimeState {

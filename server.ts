@@ -2451,8 +2451,19 @@ async function executeBackgroundMarketScan() {
         runtimeState.lastKnownPrice = lastPrice;
 
         // Only append to signal history database if this is a genuinely new signal or action changed
+        const isGateBlocked = Boolean(signal.regimeGateStatus && signal.regimeGateStatus !== 'CLEAR');
+        const shouldPersist = eligibleSignal || isGateBlocked;
         const isNewOrDifferentSignal = runtimeState.lastSignalHash !== signalResult.dedupHash;
-        if (eligibleSignal && (isNewOrDifferentSignal || now - (runtimeState.lastAlertSentAt || 0) >= cooldownMs)) {
+
+        if (shouldPersist && (isNewOrDifferentSignal || now - (runtimeState.lastAlertSentAt || 0) >= cooldownMs)) {
+          const blockReason = signal.regimeGateStatus === 'CHOP_BLOCKED'
+            ? 'Chop / Flat Range (ADX < 18)'
+            : signal.regimeGateStatus === 'HTF_BLOCKED'
+              ? '4h Macro Bearish Downtrend'
+              : signal.regimeGateStatus === 'RVOL_BLOCKED'
+                ? 'Low Relative Volume Fakeout'
+                : undefined;
+
           await appendSignal({
             id: `sig_${assetKey}_${now}`,
             timestamp: now,
@@ -2469,6 +2480,9 @@ async function executeBackgroundMarketScan() {
             target3: signal.target3,
             summaryAr: signal.summaryAr,
             summaryEn: signal.summaryEn,
+            isGateBlocked,
+            regimeGateStatus: signal.regimeGateStatus,
+            blockReason,
             metadataJson: JSON.stringify({
               indicators: signalResult.indicators,
               smc: signalResult.smc,
@@ -2478,9 +2492,24 @@ async function executeBackgroundMarketScan() {
               regimeGateStatus: signal.regimeGateStatus,
               multiTimeframeBias: signal.multiTimeframeBias,
               relativeVolume: signal.relativeVolume,
+              isGateBlocked,
+              blockReason,
+              modelUsed: signal.modelUsed,
+              theoreticalTargets: {
+                entry: signal.entryPrice,
+                tp1: signal.target1,
+                tp2: signal.target2,
+                tp3: signal.target3,
+                sl: signal.stopLoss,
+              },
             }),
             dedupHash: signalResult.dedupHash,
           });
+
+          // Prevent rapid duplicate writes of blocked signals
+          if (isGateBlocked) {
+            runtimeState.lastSignalHash = signalResult.dedupHash;
+          }
         }
 
         if (!eligibleSignal) {
