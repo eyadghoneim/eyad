@@ -185,6 +185,9 @@ export interface AIReasoning {
   protectionLayers?: ProtectionLayerStatus[];
   whaleSentiment?: 'ACCUMULATION' | 'DISTRIBUTION' | 'NEUTRAL';
   adxTrend?: 'STRONG_TREND' | 'WEAK_CHOPPY';
+  multiTimeframeBias?: 'BULLISH_CONFLUENCE' | 'BEARISH_COUNTERTREND' | 'NEUTRAL';
+  regimeGateStatus?: 'CLEAR' | 'CHOP_BLOCKED' | 'SQUEEZE_BLOCKED' | 'HTF_BLOCKED' | 'RVOL_BLOCKED';
+  relativeVolume?: number;
   asset?: SupportedAsset;
   timestamp?: string;
   liquidityRegime?: LiquidityRegimeScorecard;

@@ -5,6 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { buildDeterministicSignal } from './botStrategy';
+import type { Candle } from './src/types';
 import {
   getBridgeFlowOverview,
   getLiquidityRegimeSnapshot,
@@ -2340,13 +2341,23 @@ async function executeBackgroundMarketScan() {
     await Promise.all(botState.monitoredAssets.map(async (assetKey) => {
       try {
         const symbol = assetToSymbol[assetKey];
-        const klineRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=240`, {
-          headers: { 'User-Agent': 'eyad-trading-daemon/2.6' },
-          signal: AbortSignal.timeout(8000),
-        });
+        const [klineRes, kline4hRes, fundingRes] = await Promise.all([
+          fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=240`, {
+            headers: { 'User-Agent': 'eyad-trading-daemon/2.6' },
+            signal: AbortSignal.timeout(8000),
+          }).catch(() => null),
+          fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=4h&limit=100`, {
+            headers: { 'User-Agent': 'eyad-trading-daemon/2.6' },
+            signal: AbortSignal.timeout(8000),
+          }).catch(() => null),
+          assetKey !== 'PAXG' ? fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`, {
+            headers: { 'User-Agent': 'eyad-trading-daemon/2.6' },
+            signal: AbortSignal.timeout(4000),
+          }).catch(() => null) : Promise.resolve(null),
+        ]);
 
-        if (!klineRes.ok) {
-          addServerLog('ERROR', `Klines fetch failed for ${assetKey}: HTTP ${klineRes.status}`, assetKey);
+        if (!klineRes || !klineRes.ok) {
+          addServerLog('ERROR', `Klines fetch failed for ${assetKey}: HTTP ${klineRes?.status || 'network error'}`, assetKey);
           return;
         }
 
@@ -2365,6 +2376,35 @@ async function executeBackgroundMarketScan() {
           return;
         }
 
+        // Higher-Timeframe (4h) Candles
+        let higherTimeframeCandles: Candle[] | null = null;
+        if (kline4hRes && kline4hRes.ok) {
+          try {
+            const raw4h = await kline4hRes.json();
+            higherTimeframeCandles = (raw4h || []).map((k: any) => ({
+              time: k[0],
+              open: parseFloat(k[1]),
+              high: parseFloat(k[2]),
+              low: parseFloat(k[3]),
+              close: parseFloat(k[4]),
+              volume: parseFloat(k[5]),
+            }));
+          } catch {}
+        }
+
+        // Derivatives Funding Rate
+        let derivativesData = null;
+        if (fundingRes && fundingRes.ok) {
+          try {
+            const fData = await fundingRes.json();
+            const lastFundingRate = parseFloat(fData?.lastFundingRate || '0');
+            derivativesData = {
+              fundingRatePercent: Number((lastFundingRate * 100).toFixed(4)),
+              sentiment: lastFundingRate > 0.00035 ? 'OVERHEATED_LONGS' : lastFundingRate < -0.0002 ? 'HEAVY_SHORTS' : 'NEUTRAL',
+            };
+          } catch {}
+        }
+
         const tickerItem = tickerMap.get(symbol);
         const lastPrice = Number(tickerItem?.lastPrice || candles[candles.length - 1].close || 0);
         const priceChangePct = Number(tickerItem?.priceChangePercent || 0);
@@ -2374,12 +2414,28 @@ async function executeBackgroundMarketScan() {
         } catch (lErr: any) {
           // Graceful fallback if DefiLlama is rate limited
         }
-        const signalResult = buildDeterministicSignal({ asset: assetKey as any, candles, change24h: priceChangePct, liquidityRegime });
+        const signalResult = buildDeterministicSignal({
+          asset: assetKey as any,
+          candles,
+          change24h: priceChangePct,
+          liquidityRegime,
+          higherTimeframeCandles,
+          derivativesData,
+        });
         const signal = signalResult.signal;
         const runtimeState = await getOrCreateRuntimeAssetState(assetKey);
         const now = Date.now();
         const cooldownMs = 2 * 60 * 60 * 1000; // 2 hours minimum cooldown for same action
         const eligibleSignal = signal.spotAction === 'SPOT_BUY' || signal.spotAction === 'SPOT_SELL_ALL';
+
+        // Log quantitative gates if active
+        if (signal.regimeGateStatus === 'CHOP_BLOCKED') {
+          addServerLog('INFO', `🛡️ [Regime Gate] Blocked buy on ${assetKey}: Market choppy/flat (ADX < 18)`, assetKey);
+        } else if (signal.regimeGateStatus === 'HTF_BLOCKED') {
+          addServerLog('INFO', `🛡️ [MTF Guard] Blocked counter-trend buy on ${assetKey}: 4h macro trend is bearish`, assetKey);
+        } else if (signal.regimeGateStatus === 'RVOL_BLOCKED') {
+          addServerLog('INFO', `🛡️ [RVOL Guard] Blocked buy on ${assetKey}: Breakout lacks volume confirmation`, assetKey);
+        }
         
         // Strict deduplication check:
         // 1. Same exact dedup hash within cooldown
@@ -2419,6 +2475,9 @@ async function executeBackgroundMarketScan() {
               elliott: signalResult.elliott,
               reasons: signalResult.reasons,
               liquidityRegime,
+              regimeGateStatus: signal.regimeGateStatus,
+              multiTimeframeBias: signal.multiTimeframeBias,
+              relativeVolume: signal.relativeVolume,
             }),
             dedupHash: signalResult.dedupHash,
           });

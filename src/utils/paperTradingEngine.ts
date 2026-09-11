@@ -137,6 +137,14 @@ export function evaluatePaperPositionsAuto(
       closeReasonAr = `🔒 تفعيل الوقف المتحرك آلياً عند $${trailingStopPrice.toLocaleString()} وتأمين الأرباح (+${trailPnlPct.toFixed(1)}%)`;
       closeEventType = 'TRAILING_STOP';
     }
+    // Condition 5: Time-Based Stagnation Exit (> 72h with stagnant/flat price action)
+    else if (pos.entryTime && (Date.now() - pos.entryTime) > 72 * 3600 * 1000 && Math.abs(pnlPct) < 1.0) {
+      shouldClose = true;
+      executionExitPrice = livePrice;
+      closeReason = `⌛ Time-Based Stagnation Exit: Position held for >72h without directional momentum (${pnlPct.toFixed(1)}%). Capital released to avoid drag.`;
+      closeReasonAr = `⌛ خروج زمني وقائي: بقاء المركز مفتوحاً لأكثر من 72 ساعة دون حركة حاسمة (${pnlPct.toFixed(1)}%). تم الخروج بالتعادل لحماية السيولة من الركود.`;
+      closeEventType = 'STOP_LOSS';
+    }
 
     if (shouldClose) {
       // Execute automated liquidation with accurate executed price

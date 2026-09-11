@@ -262,6 +262,76 @@ assert(
 );
 
 // -------------------------------------------------------------
+// Suite 6: Quantitative Gates & Multi-Timeframe Confluence
+// -------------------------------------------------------------
+console.log('--- 6. Quantitative Gates & Multi-Timeframe Confluence ---');
+
+const { buildDeterministicSignal } = await import('../botStrategy');
+const bullishCandles = generateMockCandles(60, 80000, 'up');
+const bearishCandles = generateMockCandles(60, 95000, 'down');
+
+// 6.1 Test Multi-Timeframe 4h Confluence: 4h Bearish blocks 1h counter-trend buy
+const mtfSignalResult = buildDeterministicSignal({
+  asset: 'BTC',
+  candles: bullishCandles,
+  change24h: 3.5,
+  higherTimeframeCandles: bearishCandles, // 4h is sharply falling
+});
+assert(
+  mtfSignalResult.signal.regimeGateStatus === 'HTF_BLOCKED' || mtfSignalResult.signal.multiTimeframeBias === 'BEARISH_COUNTERTREND',
+  'MTF Guard detects 4h macro bearish downtrend against 1h bounce'
+);
+assert(
+  mtfSignalResult.signal.spotAction !== 'SPOT_BUY',
+  'MTF Guard prevents SPOT_BUY when 4h higher timeframe is strictly bearish'
+);
+
+// 6.2 Test Hard Regime Gate: Extremely low ADX (flat/chop) forces NO_TRADE
+// Create flat candles with minimal movement to depress ADX
+const flatCandles: Candle[] = [];
+for (let i = 0; i < 60; i++) {
+  const p = 80000 + (i % 2 === 0 ? 5 : -5);
+  flatCandles.push({
+    time: Date.now() - (60 - i) * 3600 * 1000,
+    open: p,
+    high: p + 10,
+    low: p - 10,
+    close: p + 1,
+    volume: 1000,
+  });
+}
+const flatResult = buildDeterministicSignal({
+  asset: 'BTC',
+  candles: flatCandles,
+  change24h: 0.1,
+});
+assert(
+  flatResult.signal.regimeGateStatus === 'CHOP_BLOCKED' || flatResult.signal.spotAction === 'SPOT_HOLD',
+  'Hard Regime Gate blocks buy entries during flat/choppy consolidation (ADX < 18)'
+);
+
+// 6.3 Test Derivatives Funding Squeeze Penalty
+const overheatedDerivativesResult = buildDeterministicSignal({
+  asset: 'BTC',
+  candles: bullishCandles,
+  change24h: 2.0,
+  derivativesData: {
+    fundingRatePercent: 0.065, // Very high positive funding (> 0.04%)
+    sentiment: 'OVERHEATED_LONGS',
+  },
+});
+assert(
+  overheatedDerivativesResult.reasons.some(r => r.includes('Derivatives risk: Overheated positive funding')),
+  'Derivatives filter applies penalty and warning on overheated positive funding rate'
+);
+
+// 6.4 Test Relative Volume (RVOL) calculation
+assert(
+  typeof mtfSignalResult.signal.relativeVolume === 'number' && mtfSignalResult.signal.relativeVolume > 0,
+  'Relative Volume (RVOL) is calculated and bounded as positive ratio'
+);
+
+// -------------------------------------------------------------
 // Test Results Summary
 // -------------------------------------------------------------
 console.log('\n=============================================');
