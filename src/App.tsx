@@ -584,6 +584,7 @@ export function App() {
     fetchAllTickers();
 
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       handleFetchLiveData();
       fetchAllTickers();
     }, 15000);
@@ -638,13 +639,22 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    fetchMacroStatus();
-    fetchLiquidityRegime(currentAsset);
+    // Stagger slightly on initial load to prioritize fast first paint of candles and tickers
+    const timer = setTimeout(() => {
+      fetchMacroStatus();
+      fetchLiquidityRegime(currentAsset);
+    }, 200);
+
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchMacroStatus();
       fetchLiquidityRegime(currentAsset);
     }, 60000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [fetchMacroStatus, fetchLiquidityRegime, currentAsset]);
 
   // Periodically fetch live derivatives data for Funding & Overheat Risk Guards
@@ -659,10 +669,19 @@ export function App() {
         }
       } catch {}
     };
-    fetchDeriv();
-    const interval = setInterval(fetchDeriv, 30000);
+
+    const timer = setTimeout(() => {
+      if (isMounted) fetchDeriv();
+    }, 400);
+
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchDeriv();
+    }, 30000);
+
     return () => {
       isMounted = false;
+      clearTimeout(timer);
       clearInterval(interval);
     };
   }, [currentAsset]);

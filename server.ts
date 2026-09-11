@@ -276,26 +276,59 @@ app.get('/api/market/btc-live', async (req, res) => {
     // Continue to next fallback
   }
 
-  // 2. Try Coinbase API with 2.5s timeout
+  // 2. Try Coinbase API (Exchange stats with real 24h volume and change, fallback to spot)
   try {
-    const cbRes = await fetchWithTimeout(`https://api.coinbase.com/v2/prices/${assetConfig.coinbase}/spot`, {}, 2500);
+    const cbStatsRes = await fetchWithTimeout(
+      `https://api.exchange.coinbase.com/products/${assetConfig.coinbase}/stats`,
+      { headers: { 'User-Agent': 'eyad-trading-bot/1.0' } },
+      2500
+    );
+    if (cbStatsRes.ok) {
+      const stats = await cbStatsRes.json();
+      const last = parseFloat(stats.last);
+      const open = parseFloat(stats.open);
+      const high = parseFloat(stats.high);
+      const low = parseFloat(stats.low);
+      const volume = parseFloat(stats.volume);
+      if (last > 0) {
+        const change24h = open > 0 ? Number((((last - open) / open) * 100).toFixed(2)) : 0;
+        return res.json({
+          success: true,
+          source: `Coinbase Exchange Stats API (${asset}/USD)`,
+          asset,
+          price: last,
+          isFallback: false,
+          priceSource: 'live_coinbase',
+          change24h,
+          high24h: high > 0 ? high : last * 1.01,
+          low24h: low > 0 ? low : last * 0.99,
+          volume24h: volume > 0 ? volume : 0,
+          quoteVolume: volume > 0 ? Number((volume * last).toFixed(2)) : 0,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    const cbRes = await fetchWithTimeout(`https://api.coinbase.com/v2/prices/${assetConfig.coinbase}/spot`, {}, 2000);
     if (cbRes.ok) {
       const cbData = await cbRes.json();
-      const price = parseFloat(cbData.data.amount);
-      return res.json({
-        success: true,
-        source: `Coinbase Spot API (${asset}/USD)`,
-        asset,
-        price,
-        isFallback: false,
-        priceSource: 'live_coinbase',
-        change24h: 1.25,
-        high24h: price * 1.018,
-        low24h: price * 0.985,
-        volume24h: 32000,
-        quoteVolume: price * 32000,
-        timestamp: Date.now(),
-      });
+      const price = parseFloat(cbData?.data?.amount);
+      if (price > 0) {
+        return res.json({
+          success: true,
+          source: `Coinbase Spot API (${asset}/USD)`,
+          asset,
+          price,
+          isFallback: false,
+          priceSource: 'live_coinbase',
+          change24h: 0,
+          high24h: price * 1.01,
+          low24h: price * 0.99,
+          volume24h: 0,
+          quoteVolume: 0,
+          timestamp: Date.now(),
+        });
+      }
     }
   } catch (err) {
     // Continue
@@ -647,6 +680,7 @@ app.get('/api/llama/open-interest/overview', async (_req, res) => {
 
 app.get('/api/llama/bridges/flows', async (_req, res) => {
   try {
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=1200');
     const payload = await getBridgeFlowOverview();
     return res.json(payload);
   } catch (error: any) {
@@ -657,6 +691,7 @@ app.get('/api/llama/bridges/flows', async (_req, res) => {
 app.get('/api/llama/liquidity-regime', async (req, res) => {
   try {
     const asset = String(req.query.asset || 'BTC').toUpperCase();
+    res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
     const payload = await getLiquidityRegimeSnapshot(asset as any);
     return res.json(payload);
   } catch (error: any) {
@@ -1024,6 +1059,7 @@ app.get('/api/market/sentiment', async (req, res) => {
 
 // 3.5 Macroeconomic Calendar & High-Impact Events Filter (CPI / FOMC / NFP / Rate Decisions)
 app.get('/api/market/macro-events', async (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=1800');
   const now = Date.now();
   const ONE_HOUR = 3600 * 1000;
 
@@ -2603,7 +2639,8 @@ async function executeBackgroundMarketScan() {
   }
 }
 
-scheduleNextBackgroundScan(5000);
+// Postpone initial scan on startup by 30 seconds to allow the container to settle and serve incoming user traffic without CPU contention
+scheduleNextBackgroundScan(30000);
 
 app.get('/api/bot/public-status', async (req, res) => {
   return res.json({
