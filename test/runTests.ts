@@ -18,7 +18,7 @@ import {
 import { analyzeSMC } from '../src/utils/smcAnalysis';
 import { extractValidatedSwings, analyzeElliottWave } from '../src/utils/elliottWave';
 import { run1YearBacktest } from '../src/utils/backtestingEngine';
-import { Candle } from '../src/types';
+import { Candle, LiquidityRegimeScorecard, PaperAccount } from '../src/types';
 
 let passedTests = 0;
 let totalTests = 0;
@@ -271,18 +271,28 @@ const bullishCandles = generateMockCandles(60, 80000, 'up');
 const bearishCandles = generateMockCandles(60, 95000, 'down');
 
 // 6.1 Test Multi-Timeframe 4h Confluence: 4h Bearish blocks 1h counter-trend buy
+const mockHtfLiquidityRegime: LiquidityRegimeScorecard = {
+  signature: 'test_signature_htf',
+  verdict: 'NEUTRAL',
+  totalAdjustment: 15,
+  macroScore: 5,
+  stablecoinScore: 5,
+  dexScore: 5,
+  openInterestScore: 0,
+  bridgeScore: 0,
+  summaryAr: 'سيولة مؤسسية متدفقة',
+  summaryEn: 'Institutional inflows',
+  highlightsAr: [],
+  highlightsEn: ['Institutional inflows'],
+  updatedAt: Date.now(),
+  source: ['unit-test'],
+};
 const mtfSignalResult = buildDeterministicSignal({
   asset: 'BTC',
   candles: bullishCandles,
   change24h: 3.5,
   higherTimeframeCandles: bearishCandles, // 4h is sharply falling
-  liquidityRegime: {
-    totalAdjustment: 15,
-    highlightsAr: [],
-    highlightsEn: ['Institutional inflows'],
-    summaryAr: '',
-    summaryEn: 'Institutional inflows',
-  },
+  liquidityRegime: mockHtfLiquidityRegime,
 });
 assert(
   mtfSignalResult.signal.regimeGateStatus === 'HTF_BLOCKED' && mtfSignalResult.signal.multiTimeframeBias === 'BEARISH_COUNTERTREND',
@@ -307,17 +317,27 @@ for (let i = 0; i < 60; i++) {
     volume: 1000,
   });
 }
+const mockChopLiquidityRegime: LiquidityRegimeScorecard = {
+  signature: 'test_signature_chop',
+  verdict: 'NEUTRAL',
+  totalAdjustment: 20,
+  macroScore: 10,
+  stablecoinScore: 5,
+  dexScore: 5,
+  openInterestScore: 0,
+  bridgeScore: 0,
+  summaryAr: 'سيولة عالية',
+  summaryEn: 'High liquidity',
+  highlightsAr: [],
+  highlightsEn: ['High volume'],
+  updatedAt: Date.now(),
+  source: ['unit-test'],
+};
 const flatResult = buildDeterministicSignal({
   asset: 'BTC',
   candles: flatCandles,
   change24h: 2.5,
-  liquidityRegime: {
-    totalAdjustment: 20,
-    highlightsAr: [],
-    highlightsEn: ['High volume'],
-    summaryAr: '',
-    summaryEn: 'High liquidity',
-  },
+  liquidityRegime: mockChopLiquidityRegime,
 });
 assert(
   flatResult.signal.regimeGateStatus === 'CHOP_BLOCKED',
@@ -363,7 +383,7 @@ assert(
 
 // 6.7 Test Correlation Guard: Scale down position size by 50% when correlated crypto is active
 const { autoOpenPaperTradeOnSignal } = await import('../src/utils/paperTradingEngine');
-const basePaperAccount = {
+const basePaperAccount: PaperAccount = {
   virtualBalanceUsd: 10000,
   allocatedCapitalUsd: 1000,
   totalRealizedPnlUsd: 0,
@@ -373,6 +393,7 @@ const basePaperAccount = {
       asset: 'BTC' as const,
       entryPrice: 85000,
       currentPrice: 86000,
+      highestPrice: 86000,
       amount: 0.01176,
       allocatedUsd: 1000,
       tp1: 88000,
@@ -411,7 +432,7 @@ const corrScaleResult = autoOpenPaperTradeOnSignal(
 );
 
 assert(
-  corrScaleResult.opened === true && corrScaleResult.event?.messageAr.includes('تخفيف الحجم 50%'),
+  Boolean(corrScaleResult.opened === true && corrScaleResult.event?.messageAr.includes('تخفيف الحجم 50%')),
   'Correlation Guard halves position size on ETH when BTC position is open and conviction is high'
 );
 
