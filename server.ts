@@ -665,11 +665,14 @@ app.get('/api/llama/liquidity-regime', async (req, res) => {
 
 // 2.7 Live Order Book & Whale Liquidity Depth Endpoint
 app.get('/api/market/depth', async (req, res) => {
-  const asset = (req.query.asset as string) || 'BTC';
+  const asset = ((req.query.asset as string) || 'BTC').toUpperCase();
   let symbol = 'BTCUSDT';
-  if (asset === 'ETH') symbol = 'ETHUSDT';
-  if (asset === 'PAXG') symbol = 'PAXGUSDT';
+  let cbProduct = 'BTC-USD';
+  if (asset === 'ETH') { symbol = 'ETHUSDT'; cbProduct = 'ETH-USD'; }
+  if (asset === 'SOL') { symbol = 'SOLUSDT'; cbProduct = 'SOL-USD'; }
+  if (asset === 'PAXG') { symbol = 'PAXGUSDT'; cbProduct = 'PAXG-USD'; }
 
+  // 1. Try Binance Live Depth API
   try {
     const depthRes = await fetchWithTimeout(`https://api.binance.com/api/v3/depth?symbol=${symbol}&limit=50`, {
       headers: { 'User-Agent': 'eyad-trading-bot' },
@@ -738,15 +741,102 @@ app.get('/api/market/depth', async (req, res) => {
         isSellWallBlocking,
         rule3Passed: !isSellWallBlocking,
         source: 'Binance Live Depth API',
+        isSimulated: false,
         timestamp: Date.now(),
       });
     }
   } catch (e) {
-    // fallback simulated depth
+    // try Coinbase
   }
 
-  // Fallback realistic depth simulation
-  const baseP = asset === 'ETH' ? 2436 : asset === 'PAXG' ? 4456 : 77696;
+  // 2. Try Coinbase Live Orderbook Level 2 API
+  try {
+    const cbRes = await fetchWithTimeout(`https://api.exchange.coinbase.com/products/${cbProduct}/book?level=2`, {
+      headers: { 'User-Agent': 'eyad-trading-bot' },
+    }, 3500);
+
+    if (cbRes.ok) {
+      const cbData = await cbRes.json();
+      const bids: Array<{ price: number; amount: number; total: number }> = [];
+      const asks: Array<{ price: number; amount: number; total: number }> = [];
+
+      let cumulativeBid = 0;
+      (cbData.bids || []).slice(0, 20).forEach(([p, a]: [string, string, number]) => {
+        const price = parseFloat(p);
+        const amount = parseFloat(a);
+        cumulativeBid += amount;
+        bids.push({ price, amount, total: Number(cumulativeBid.toFixed(4)) });
+      });
+
+      let cumulativeAsk = 0;
+      (cbData.asks || []).slice(0, 20).forEach(([p, a]: [string, string, number]) => {
+        const price = parseFloat(p);
+        const amount = parseFloat(a);
+        cumulativeAsk += amount;
+        asks.push({ price, amount, total: Number(cumulativeAsk.toFixed(4)) });
+      });
+
+      const totalBidVolume = bids.reduce((s, b) => s + b.amount, 0);
+      const totalAskVolume = asks.reduce((s, a) => s + a.amount, 0);
+      const totalVolume = totalBidVolume + totalAskVolume || 1;
+      const imbalancePercent = Math.round(((totalBidVolume - totalAskVolume) / totalVolume) * 100);
+
+      const midPrice = bids[0]?.price && asks[0]?.price ? (bids[0].price + asks[0].price) / 2 : 0;
+      const bestBid = bids[0]?.price || midPrice;
+      const bestAsk = asks[0]?.price || midPrice;
+      const spreadUsd = Number(Math.max(0, bestAsk - bestBid).toFixed(2));
+      const spreadPercent = bestBid > 0 ? Number(((spreadUsd / bestBid) * 100).toFixed(4)) : 0;
+      const spreadStatus = spreadPercent <= 0.05 ? 'NORMAL_TIGHT' : spreadPercent <= 0.15 ? 'ELEVATED' : 'HIGH_SPREAD_RISK';
+
+      const avgAskSize = totalAskVolume / (asks.length || 1);
+      const whaleAskWalls = asks.filter(a => a.amount >= avgAskSize * 2.8);
+      const isSellWallBlocking = whaleAskWalls.some(w => midPrice > 0 && ((w.price - midPrice) / midPrice) <= 0.02);
+
+      const avgBidSize = totalBidVolume / (bids.length || 1);
+      const whaleBidWalls = bids.filter(b => b.amount >= avgBidSize * 2.8);
+
+      return res.json({
+        success: true,
+        asset,
+        symbol: cbProduct,
+        midPrice,
+        bestBid,
+        bestAsk,
+        spreadUsd,
+        spreadPercent,
+        spreadStatus,
+        bids,
+        asks,
+        totalBidVolume,
+        totalAskVolume,
+        imbalancePercent,
+        buyerPercentage: Math.round((totalBidVolume / totalVolume) * 100),
+        sellerPercentage: Math.round((totalAskVolume / totalVolume) * 100),
+        whaleBidWalls,
+        whaleAskWalls,
+        isSellWallBlocking,
+        rule3Passed: !isSellWallBlocking,
+        source: 'Coinbase Live Depth API',
+        isSimulated: false,
+        timestamp: Date.now(),
+      });
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  // 3. Fallback: Use verified last real price from engine memory if available
+  const baseP = botState.lastKnownPrices[asset] || 0;
+  if (!baseP || baseP <= 0) {
+    return res.status(503).json({
+      success: false,
+      error: `Order book depth temporarily unavailable for ${asset}. All upstream providers unreachable.`,
+      asset,
+      isFallback: true,
+      dataUnavailable: true,
+    });
+  }
+
   const mockBids: Array<{ price: number; amount: number; total: number }> = [];
   const mockAsks: Array<{ price: number; amount: number; total: number }> = [];
   let curBidTotal = 0;
@@ -754,12 +844,12 @@ app.get('/api/market/depth', async (req, res) => {
 
   for (let i = 1; i <= 15; i++) {
     const bPrice = baseP * (1 - i * 0.001);
-    const bAmt = (Math.random() * 8 + 2) * (asset === 'ETH' ? 12 : asset === 'PAXG' ? 5 : 1);
+    const bAmt = (Math.random() * 8 + 2) * (asset === 'ETH' ? 12 : asset === 'PAXG' ? 5 : asset === 'SOL' ? 40 : 1);
     curBidTotal += bAmt;
     mockBids.push({ price: Number(bPrice.toFixed(2)), amount: Number(bAmt.toFixed(3)), total: Number(curBidTotal.toFixed(3)) });
 
     const aPrice = baseP * (1 + i * 0.001);
-    const aAmt = (Math.random() * 7 + 1.5) * (asset === 'ETH' ? 12 : asset === 'PAXG' ? 5 : 1);
+    const aAmt = (Math.random() * 7 + 1.5) * (asset === 'ETH' ? 12 : asset === 'PAXG' ? 5 : asset === 'SOL' ? 40 : 1);
     curAskTotal += aAmt;
     mockAsks.push({ price: Number(aPrice.toFixed(2)), amount: Number(aAmt.toFixed(3)), total: Number(curAskTotal.toFixed(3)) });
   }
@@ -790,7 +880,8 @@ app.get('/api/market/depth', async (req, res) => {
     whaleAskWalls: [],
     isSellWallBlocking: false,
     rule3Passed: true,
-    source: 'Simulated Order Depth Model',
+    source: 'Simulated Depth Model (Offline Fallback)',
+    isSimulated: true,
     timestamp: Date.now(),
   });
 });

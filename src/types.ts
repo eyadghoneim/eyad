@@ -483,6 +483,7 @@ export interface OrderBookDepth {
   spreadPercent?: number;
   spreadStatus?: 'NORMAL_TIGHT' | 'ELEVATED' | 'HIGH_SPREAD_RISK';
   source: string;
+  isSimulated?: boolean;
   timestamp: number;
 }
 

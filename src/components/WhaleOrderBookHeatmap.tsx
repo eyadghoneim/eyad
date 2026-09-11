@@ -65,11 +65,21 @@ const WhaleOrderBookHeatmapImpl: React.FC<WhaleOrderBookHeatmapProps> = ({
             <Layers className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="font-bold text-sm text-white flex items-center gap-2">
+            <h3 className="font-bold text-sm text-white flex items-center gap-2 flex-wrap">
               {lang === 'ar' ? `دفتر الأوامر والسيولة وخريطة الحيتان (${currentAsset}/USDT)` : `Order Book & Whale Liquidity Heatmap (${currentAsset})`}
-              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                Binance Live Depth
-              </span>
+              {depthData?.isSimulated ? (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  {lang === 'ar' ? 'نموذج محاكاة احتياطي' : 'Simulated Model (Fallback)'}
+                </span>
+              ) : depthData?.source?.includes('Coinbase') ? (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  Coinbase Live Depth
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  {depthData?.source || 'Binance Live Depth'}
+                </span>
+              )}
             </h3>
             <p className="text-xs text-gray-400 font-sans">
               {lang === 'ar' 
