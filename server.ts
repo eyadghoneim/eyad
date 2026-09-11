@@ -48,6 +48,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => {
   // Vite emits content-hashed filenames under /assets (e.g. index-dGvpSBT-.js),
@@ -64,7 +65,7 @@ app.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production') {
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self' https: data: blob:; connect-src 'self' https://api.binance.com https://api.coinbase.com https://api.coingecko.com https://api.telegram.org https://api.alternative.me https://*.run.app; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; font-src 'self' data: https:; frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.run.app; base-uri 'self'; form-action 'self';"
+      "default-src 'self' https: data: blob:; connect-src 'self' https://api.binance.com https://api.coinbase.com https://api.coingecko.com https://api.telegram.org https://api.alternative.me https://*.run.app; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.run.app; base-uri 'self'; form-action 'self';"
     );
   }
   next();
@@ -98,7 +99,8 @@ function persistSecurityLog(type: ServerBotLog['type'], message: string, asset?:
 
 function createRateLimitMiddleware(scope: string, max: number, windowMs: number) {
   return (req: Request, res: any, next: NextFunction) => {
-    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+    const rawIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const ip = String(rawIp).split(',')[0].trim();
     const key = `${scope}:${ip}:${req.path}`;
     const now = Date.now();
     const bucket = requestBuckets.get(key);
@@ -199,7 +201,7 @@ const ai = new GoogleGenAI({
 
 // 1. Health check
 app.get('/api/health', async (req, res) => {
-  res.json({ status: 'ok', bot: 'EYAD Trading Engine', version: '2.5.0' });
+  res.json({ status: 'ok', bot: 'EYAD Trading Engine', version: '2.6.0' });
 });
 
 // 2. Market Proxy - Live Crypto Data (Binance REST API + Coinbase + CoinGecko fallback)
@@ -207,10 +209,11 @@ app.get('/api/market/btc-live', async (req, res) => {
   const timeframe = (req.query.timeframe as string) || '1h';
   const asset = ((req.query.asset as string) || 'BTC').toUpperCase();
 
-  const symbolMap: Record<string, { binance: string; coinbase: string; coingecko: string; fallbackPrice: number }> = {
-    BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin', fallbackPrice: 77696.0 },
-    ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum', fallbackPrice: 2436.0 },
-    PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold', fallbackPrice: 4456.0 },
+  const symbolMap: Record<string, { binance: string; coinbase: string; coingecko: string }> = {
+    BTC: { binance: 'BTCUSDT', coinbase: 'BTC-USD', coingecko: 'bitcoin' },
+    ETH: { binance: 'ETHUSDT', coinbase: 'ETH-USD', coingecko: 'ethereum' },
+    PAXG: { binance: 'PAXGUSDT', coinbase: 'PAXG-USD', coingecko: 'pax-gold' },
+    SOL: { binance: 'SOLUSDT', coinbase: 'SOL-USD', coingecko: 'solana' },
   };
 
   const assetConfig = symbolMap[asset] || symbolMap.BTC;
@@ -324,22 +327,28 @@ app.get('/api/market/btc-live', async (req, res) => {
     // Continue
   }
 
-  // 4. Reliable fallback by asset
-  const defPrice = assetConfig.fallbackPrice;
-  return res.json({
-    success: true,
-    source: `Market Feed Engine (${asset}/USDT)`,
+  // 4. If all live providers fail, check if engine memory has an authentic recent price
+  const lastRealPrice = botState.lastKnownPrices[asset];
+  if (lastRealPrice && lastRealPrice > 0) {
+    return res.json({
+      success: true,
+      source: `Last Verified Engine State (${asset})`,
+      asset,
+      price: lastRealPrice,
+      isFallback: true,
+      priceSource: 'cached_verified_state',
+      fallbackNotice: 'Live exchanges temporarily unreachable. Displaying last verified price from engine memory.',
+      change24h: 0,
+      timestamp: botState.lastScanTime || Date.now(),
+    });
+  }
+
+  return res.status(503).json({
+    success: false,
+    error: `Market data temporarily unavailable for ${asset}. All upstream providers (Binance, Coinbase, CoinGecko) timed out or failed.`,
     asset,
-    price: defPrice,
     isFallback: true,
-    priceSource: 'fallback_offline',
-    fallbackNotice: 'Offline cached fallback price: live upstream exchanges unreachable',
-    change24h: 1.84,
-    high24h: defPrice * 1.015,
-    low24h: defPrice * 0.985,
-    volume24h: 28450.5,
-    quoteVolume: defPrice * 28450.5,
-    timestamp: Date.now(),
+    dataUnavailable: true,
   });
 });
 
@@ -561,7 +570,32 @@ app.get('/api/market/all-assets', async (req, res) => {
     console.error('[/api/market/all-assets] Coinbase fallback failed:', err?.message || err);
   }
 
-  return res.json({ success: true, assets: fallbacks, source: 'Fallback Local Feed', isFallback: true });
+  const cachedResult: Record<string, { price: number; change24h: number; high24h: number; low24h: number }> = {};
+  let cachedCount = 0;
+  for (const a of assets) {
+    const p = botState.lastKnownPrices[a];
+    if (p && p > 0) {
+      cachedResult[a] = { price: p, change24h: 0, high24h: p, low24h: p };
+      cachedCount++;
+    }
+  }
+
+  if (cachedCount >= 2) {
+    return res.json({
+      success: true,
+      assets: cachedResult,
+      source: 'Cached Engine Memory',
+      isFallback: true,
+      fallbackNotice: 'Upstream exchanges unreachable. Serving last verified engine prices.',
+    });
+  }
+
+  return res.status(503).json({
+    success: false,
+    error: 'Market data feeds temporarily unavailable across all upstream exchanges',
+    isFallback: true,
+    dataUnavailable: true,
+  });
 });
 
 // 2.6 DefiLlama Liquidity & Activity Proxy Routes
@@ -2134,13 +2168,45 @@ function buildTelegramMessage(assetKey: string, signal: any, priceChangePct: num
 
 let backgroundTimer: NodeJS.Timeout | null = null;
 let backgroundScanInProgress = false;
+let consecutiveScanFailures = 0;
+let lastFailureAlertSentAt = 0;
 
 function scheduleNextBackgroundScan(delayMs?: number) {
   if (backgroundTimer) clearTimeout(backgroundTimer);
   const nextDelay = typeof delayMs === 'number' ? delayMs : Math.max(10, botConfig.scanIntervalSeconds) * 1000;
   backgroundTimer = setTimeout(async () => {
-    await executeBackgroundMarketScan();
-    scheduleNextBackgroundScan();
+    try {
+      await executeBackgroundMarketScan();
+      consecutiveScanFailures = 0;
+    } catch (err: any) {
+      consecutiveScanFailures++;
+      console.error(`[BackgroundScan] Fatal scan error (consecutive: ${consecutiveScanFailures}):`, err);
+      addServerLog('ERROR', `Fatal background scan exception (${consecutiveScanFailures} consecutive): ${err?.message || err}`);
+
+      // If 3 consecutive failures occur, send an emergency Telegram notification to administrator
+      if (consecutiveScanFailures >= 3 && Date.now() - lastFailureAlertSentAt > 30 * 60 * 1000) {
+        lastFailureAlertSentAt = Date.now();
+        const tokenToUse = (botConfig.telegramToken || process.env.TELEGRAM_BOT_TOKEN || '').replace(/\s+/g, '');
+        const chatIdToUse = (botConfig.telegramChatId || process.env.TELEGRAM_CHAT_ID || '').replace(/\s+/g, '');
+        if (botConfig.telegramEnabled && tokenToUse && chatIdToUse) {
+          fetch(`https://api.telegram.org/bot${tokenToUse}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatIdToUse,
+              text: `🚨 <b>[تنبيه طوارئ: تعثر حلقة المسح الآلي]</b>\n\n` +
+                `فشل فحص السوق الخلفي ${consecutiveScanFailures} مرات متتالية!\n` +
+                `السبب الأخير: <code>${String(err?.message || err).slice(0, 150)}</code>\n` +
+                `حلقة المسح مستمرة ولن تتوقف بفضل آلية try/finally الآلية.`,
+              parse_mode: 'HTML',
+            }),
+          }).catch(() => {});
+        }
+      }
+    } finally {
+      // Loop is guaranteed to be rescheduled regardless of any unhandled exceptions
+      scheduleNextBackgroundScan();
+    }
   }, nextDelay);
 }
 

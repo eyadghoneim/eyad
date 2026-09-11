@@ -227,6 +227,41 @@ assert(
 );
 
 // -------------------------------------------------------------
+// Suite 5: Persistence & Deduplication Integrity Tests
+// -------------------------------------------------------------
+console.log('--- 5. Persistence & Deduplication State Engine ---');
+
+const { getAssetState, upsertAssetState, getSignalStats } = await import('../botPersistence');
+
+const testHash = 'test_hash_' + Date.now();
+await upsertAssetState({
+  asset: 'BTC',
+  lastKnownPrice: 85200,
+  lastAlertSentAt: 1700000000000,
+  lastSignalHash: testHash,
+});
+
+const retrievedState = await getAssetState('BTC');
+assert(
+  retrievedState.asset === 'BTC',
+  'getAssetState returns normalized asset key'
+);
+assert(
+  retrievedState.lastSignalHash === testHash,
+  'upsertAssetState / getAssetState preserves signal deduplication hash across calls'
+);
+assert(
+  retrievedState.lastKnownPrice === 85200,
+  'getAssetState preserves last known execution price'
+);
+
+const signalStats = await getSignalStats();
+assert(
+  typeof signalStats.totalSignals === 'number' && typeof signalStats.actionableSignals === 'number',
+  'getSignalStats returns valid structure with non-null metrics even in offline/local storage'
+);
+
+// -------------------------------------------------------------
 // Test Results Summary
 // -------------------------------------------------------------
 console.log('\n=============================================');

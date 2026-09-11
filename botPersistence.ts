@@ -9,6 +9,7 @@ const LOCAL_SIGNALS_FILE = path.join(LOCAL_DATA_DIR, 'signals.json');
 const LOCAL_LOGS_FILE = path.join(LOCAL_DATA_DIR, 'logs.json');
 const LOCAL_NOTIFS_FILE = path.join(LOCAL_DATA_DIR, 'notifications.json');
 const LOCAL_PAPER_FILE = path.join(LOCAL_DATA_DIR, 'paper_account.json');
+const LOCAL_ASSET_STATES_FILE = path.join(LOCAL_DATA_DIR, 'asset_states.json');
 
 function loadLocalList<T>(filePath: string): T[] {
   try {
@@ -24,11 +25,34 @@ function loadLocalList<T>(filePath: string): T[] {
 function saveLocalList<T>(filePath: string, items: T[]) {
   try {
     ensureDataDirExists();
-    fs.writeFileSync(filePath, JSON.stringify(items.slice(0, 500), null, 2), 'utf-8');
+    fs.writeFileSync(filePath, JSON.stringify(items.slice(0, 2000), null, 2), 'utf-8');
   } catch {
     // ignore
   }
 }
+
+function loadLocalAssetStates(): Record<string, AssetRuntimeState> {
+  try {
+    if (fs.existsSync(LOCAL_ASSET_STATES_FILE)) {
+      return JSON.parse(fs.readFileSync(LOCAL_ASSET_STATES_FILE, 'utf-8'));
+    }
+  } catch (e) {
+    console.warn('[Persistence] Failed reading local asset states:', e);
+  }
+  return {};
+}
+
+function saveLocalAssetStates(states: Record<string, AssetRuntimeState>) {
+  try {
+    ensureDataDirExists();
+    fs.writeFileSync(LOCAL_ASSET_STATES_FILE, JSON.stringify(states, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[Persistence] Failed writing local asset states:', e);
+  }
+}
+
+// In-memory write-through cache of asset runtime states, seeded from disk
+const memoryAssetStates: Record<string, AssetRuntimeState> = loadLocalAssetStates();
 
 function ensureDataDirExists() {
   try {
@@ -259,37 +283,92 @@ export async function saveBotConfig(nextConfig: ServerBotConfig): Promise<Server
 }
 
 export async function getAssetState(asset: string): Promise<AssetRuntimeState> {
-  const defaultState: AssetRuntimeState = { asset, lastKnownPrice: 0, lastAlertSentAt: 0, lastSignalHash: '' };
-  if (!db) return defaultState;
-  try {
-    const docSnap = await getDoc(doc(db, 'bot_asset_state', asset.toUpperCase()));
-    if (docSnap.exists()) {
-      return { ...defaultState, ...(docSnap.data() as Partial<AssetRuntimeState>) };
-    }
-  } catch (e) {
-    console.error('getAssetState error', e);
+  const upper = String(asset || '').toUpperCase();
+  const defaultState: AssetRuntimeState = { asset: upper, lastKnownPrice: 0, lastAlertSentAt: 0, lastSignalHash: '' };
+
+  // 1. Check in-memory cache first (fastest, prevents race conditions)
+  if (memoryAssetStates[upper]) {
+    return { ...defaultState, ...memoryAssetStates[upper] };
   }
+
+  // 2. Check local disk JSON backup (preserves state across server restarts)
+  const diskStates = loadLocalAssetStates();
+  if (diskStates[upper]) {
+    memoryAssetStates[upper] = diskStates[upper];
+    return { ...defaultState, ...diskStates[upper] };
+  }
+
+  // 3. Fallback to Firestore if configured
+  if (db) {
+    try {
+      const docSnap = await getDoc(doc(db, 'bot_asset_state', upper));
+      if (docSnap.exists()) {
+        const state = { ...defaultState, ...(docSnap.data() as Partial<AssetRuntimeState>) };
+        memoryAssetStates[upper] = state;
+        diskStates[upper] = state;
+        saveLocalAssetStates(diskStates);
+        return state;
+      }
+    } catch (e) {
+      console.error('getAssetState firestore error', e);
+    }
+  }
+
+  memoryAssetStates[upper] = defaultState;
   return defaultState;
 }
 
 export async function upsertAssetState(state: AssetRuntimeState): Promise<void> {
-  if (!db) return;
+  const upper = String(state.asset || '').toUpperCase();
+  const cleanState: AssetRuntimeState = {
+    asset: upper,
+    lastKnownPrice: Number(state.lastKnownPrice) || 0,
+    lastAlertSentAt: Number(state.lastAlertSentAt) || 0,
+    lastSignalHash: String(state.lastSignalHash || ''),
+  };
+
+  // 1. Immediate memory write-through
+  memoryAssetStates[upper] = cleanState;
+
+  // 2. Immediate local disk JSON persist
   try {
-    await setDoc(doc(db, 'bot_asset_state', String(state.asset || '').toUpperCase()), sanitizeForFirestore(state), { merge: true });
+    const diskStates = loadLocalAssetStates();
+    diskStates[upper] = cleanState;
+    saveLocalAssetStates(diskStates);
   } catch (e) {
-    console.error('upsertAssetState error', e);
+    console.error('upsertAssetState local write error', e);
+  }
+
+  // 3. Fire-and-forget sync to Firestore if available
+  if (db) {
+    try {
+      await setDoc(doc(db, 'bot_asset_state', upper), sanitizeForFirestore(cleanState), { merge: true });
+    } catch (e) {
+      console.error('upsertAssetState firestore error', e);
+    }
   }
 }
 
 export async function listAssetStates(): Promise<AssetRuntimeState[]> {
-  if (!db) return [];
-  try {
-    const snap = await getDocs(query(collection(db, 'bot_asset_state'), orderBy('asset', 'asc')));
-    return snap.docs.map(d => d.data() as AssetRuntimeState);
-  } catch (e) {
-    console.error('listAssetStates error', e);
-    return [];
+  const diskStates = loadLocalAssetStates();
+  const merged: Record<string, AssetRuntimeState> = { ...diskStates, ...memoryAssetStates };
+
+  if (db) {
+    try {
+      const snap = await getDocs(query(collection(db, 'bot_asset_state'), orderBy('asset', 'asc')));
+      if (!snap.empty) {
+        snap.docs.forEach((d) => {
+          const item = d.data() as AssetRuntimeState;
+          if (item && item.asset) {
+            merged[item.asset.toUpperCase()] = item;
+          }
+        });
+      }
+    } catch (e) {
+      console.error('listAssetStates firestore error', e);
+    }
   }
+  return Object.values(merged);
 }
 
 export async function appendBotLog(log: ServerBotLog): Promise<void> {
@@ -377,7 +456,29 @@ export async function getSignalStats(): Promise<BotSignalStats> {
     byAsset: {},
     lastSignalAt: 0
   };
-  if (!db) return stats;
+
+  const computeLocalStats = (): BotSignalStats => {
+    const localSignals = loadLocalList<PersistedBotSignal>(LOCAL_SIGNALS_FILE);
+    const localStats: BotSignalStats = {
+      totalSignals: localSignals.length,
+      buySignals: localSignals.filter(s => s.spotAction === 'SPOT_BUY').length,
+      sellSignals: localSignals.filter(s => s.spotAction === 'SPOT_SELL_ALL').length,
+      actionableSignals: 0,
+      byAsset: {},
+      lastSignalAt: localSignals[0]?.timestamp || 0,
+    };
+    localStats.actionableSignals = localStats.buySignals + localStats.sellSignals;
+    for (const s of localSignals) {
+      const a = (s.asset || '').toUpperCase();
+      if (a) {
+        localStats.byAsset[a] = (localStats.byAsset[a] || 0) + 1;
+      }
+    }
+    return localStats;
+  };
+
+  if (!db) return computeLocalStats();
+
   try {
     const totalSnap = await getCountFromServer(collection(db, 'bot_signals'));
     stats.totalSignals = totalSnap.data().count;
@@ -411,10 +512,11 @@ export async function getSignalStats(): Promise<BotSignalStats> {
       })
     );
 
+    return stats;
   } catch (e) {
-    console.error('getSignalStats error', e);
+    console.warn('[Persistence] Firestore getSignalStats failed, calculating from local disk backup:', e);
+    return computeLocalStats();
   }
-  return stats;
 }
 
 let lastPruneExecution = 0;
@@ -431,7 +533,7 @@ export async function pruneData(): Promise<void> {
     const logCountSnap = await getCountFromServer(collection(db, 'bot_logs'));
     const totalLogs = logCountSnap.data().count;
     if (totalLogs > MAX_LOG_ROWS) {
-      const deleteCount = Math.min(50, totalLogs - MAX_LOG_ROWS);
+      const deleteCount = Math.min(250, totalLogs - MAX_LOG_ROWS);
       const oldestLogs = await getDocs(query(collection(db, 'bot_logs'), orderBy('timestamp', 'asc'), fLimit(deleteCount)));
       for (const d of oldestLogs.docs) {
         await deleteDoc(d.ref).catch(() => {});
@@ -442,7 +544,7 @@ export async function pruneData(): Promise<void> {
     const signalCountSnap = await getCountFromServer(collection(db, 'bot_signals'));
     const totalSignals = signalCountSnap.data().count;
     if (totalSignals > MAX_SIGNAL_ROWS) {
-      const deleteCount = Math.min(50, totalSignals - MAX_SIGNAL_ROWS);
+      const deleteCount = Math.min(250, totalSignals - MAX_SIGNAL_ROWS);
       const oldestSignals = await getDocs(query(collection(db, 'bot_signals'), orderBy('timestamp', 'asc'), fLimit(deleteCount)));
       for (const d of oldestSignals.docs) {
         await deleteDoc(d.ref).catch(() => {});

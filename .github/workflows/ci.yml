@@ -15,4 +15,5 @@ jobs:
           test -d node_modules/@types/react || { echo "::error::@types/react missing"; exit 1; }
           test -d node_modules/@types/react-dom || { echo "::error::@types/react-dom missing"; exit 1; }
       - run: npx tsc --noEmit
+      - run: npm test
       - run: npm run build
