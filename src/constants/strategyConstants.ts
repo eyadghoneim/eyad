@@ -21,7 +21,9 @@ export const STRATEGY_THRESHOLDS = {
   
   // Defensive / Exit Gates
   DEFENSIVE_SELL_SCORE: 32,          // Score <= 32 triggers SELL / SPOT_SELL_ALL
+  SELL_MAX_SCORE: 32,
   STRONG_SELL_SCORE: 20,             // Score <= 20 triggers STRONG_SELL
+  STRONG_SELL_MAX_SCORE: 20,
 
   // Volatility & Regime Filters
   ADX_CHOP_THRESHOLD: 18,            // ADX < 18 triggers HARD REGIME CHOP GATE

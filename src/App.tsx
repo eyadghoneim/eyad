@@ -45,7 +45,7 @@ import {
   computeConfigChecksum, 
   detectConfigDiscrepancies 
 } from './utils/configChecksum';
-import { STRATEGY_RISK_MULTIPLIERS } from './constants/strategyConstants';
+import { STRATEGY_RISK_MULTIPLIERS, STRATEGY_THRESHOLDS } from './constants/strategyConstants';
 import { generate1YearAssetData } from './utils/mockHistoricalData';
 import { calculateAllIndicators } from './utils/technicalAnalysis';
 import { analyzeSMC } from './utils/smcAnalysis';
@@ -55,29 +55,19 @@ import { run1YearBacktest } from './utils/backtestingEngine';
 import { evaluatePaperPositionsAuto, autoOpenPaperTradeOnSignal, AutoTradeExecutionResult } from './utils/paperTradingEngine';
 import { getBotAdminHeaders } from './utils/botAdminAuth';
 import { QuantRiskDashboard } from './components/QuantRiskDashboard';
+import { deriveSignalTypeAndAction } from './utils/tradingStrategy';
 import { Activity, BarChart2, BrainCircuit, Sparkles, CheckCircle2, ShieldCheck, Code2, Wallet, Layers, Calendar, Flame, Columns, Radio, Cpu } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-function applyLiquidityRegimeToSignal(signal: AIReasoning, regime: LiquidityRegimeData | null, lang: 'ar' | 'en'): AIReasoning {
+export { deriveSignalTypeAndAction };
+
+export function applyLiquidityRegimeToSignal(signal: AIReasoning, regime: LiquidityRegimeData | null, lang: 'ar' | 'en'): AIReasoning {
   if (!signal || !regime) return signal;
 
   const previousAdjustment = signal.liquidityRegime?.totalAdjustment || 0;
   const baseConviction = (signal.convictionScore || 0) - previousAdjustment;
   const adjustedConviction = Math.max(0, Math.min(100, Math.round(baseConviction + (regime.totalAdjustment || 0))));
-  const signalType = adjustedConviction >= 85
-    ? 'STRONG_BUY'
-    : adjustedConviction >= 70
-    ? 'BUY'
-    : adjustedConviction <= 18
-    ? 'STRONG_SELL'
-    : adjustedConviction <= 35
-    ? 'SELL'
-    : 'HOLD';
-  const spotAction = adjustedConviction >= 70
-    ? 'SPOT_BUY'
-    : adjustedConviction <= 35
-    ? 'SPOT_SELL_ALL'
-    : 'SPOT_HOLD';
+  const { signalType, spotAction } = deriveSignalTypeAndAction(adjustedConviction);
 
   const overlayLineAr = `طبقة السيولة الكلية عدّلت الثقة بمقدار ${regime.totalAdjustment > 0 ? '+' : ''}${regime.totalAdjustment} نقطة (${regime.verdict}).`;
   const overlayLineEn = `Liquidity regime overlay adjusted conviction by ${regime.totalAdjustment > 0 ? '+' : ''}${regime.totalAdjustment} points (${regime.verdict}).`;
@@ -571,10 +561,10 @@ export function App() {
       return {
         ...prev,
         entryPrice: Math.round(defaultPrice),
-        target1: Math.round(defaultPrice + 4 * atr),
-        target2: Math.round(defaultPrice + 6 * atr),
-        target3: Math.round(defaultPrice + 8 * atr),
-        stopLoss: Math.round(defaultPrice - 2 * atr),
+        target1: Math.round(defaultPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * atr),
+        target2: Math.round(defaultPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * atr),
+        target3: Math.round(defaultPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * atr),
+        stopLoss: Math.round(defaultPrice - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * atr),
         summaryAr: summaries[asset].ar,
         summaryEn: summaries[asset].en,
       };

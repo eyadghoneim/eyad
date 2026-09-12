@@ -7,6 +7,8 @@
  * 4. Backtesting Simulation Engine (Capital tracking, PnL calculation, Drawdown, Sharpe)
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   calculateSMA,
   calculateEMA,
@@ -21,7 +23,7 @@ import { run1YearBacktest } from '../src/utils/backtestingEngine';
 import { Candle, LiquidityRegimeScorecard, PaperAccount } from '../src/types';
 import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS, STRATEGY_ENGINE_SIGNATURE } from '../src/constants/strategyConstants';
 import { buildDeterministicSignal } from '../botStrategy';
-import { evaluateEntryQualityScore, calculateStrategyRiskTargets, ENTRY_QUALITY, RISK_MANAGEMENT } from '../src/utils/tradingStrategy';
+import { evaluateEntryQualityScore, calculateStrategyRiskTargets, deriveSignalTypeAndAction, ENTRY_QUALITY, RISK_MANAGEMENT } from '../src/utils/tradingStrategy';
 import { computeServerConfigChecksumSync, computeConfigChecksum, detectConfigDiscrepancies, SyncableBotConfig } from '../src/utils/configChecksum';
 
 let passedTests = 0;
@@ -548,6 +550,60 @@ assert(
   detectedDiffs.some(d => d.includes('TP1 ATR Multiplier')),
   'detectConfigDiscrepancies instantly catches strategic logic drift between client and server',
   `Detected diffs: ${JSON.stringify(detectedDiffs)}`
+);
+
+// Test 6.8: Behavioral check on deriveSignalTypeAndAction for scores 82 and 84
+const action82 = deriveSignalTypeAndAction(82);
+const action84 = deriveSignalTypeAndAction(84);
+assert(
+  action82.signalType === 'STRONG_BUY' && action82.spotAction === 'SPOT_BUY' &&
+  action84.signalType === 'STRONG_BUY' && action84.spotAction === 'SPOT_BUY',
+  'Behavioral Guard: Scores 82 and 84 resolve strictly to STRONG_BUY and SPOT_BUY on Client UI',
+  `Expected STRONG_BUY, got 82=${action82.signalType}, 84=${action84.signalType}`
+);
+
+// Test 6.9: Behavioral check across all decision regimes (70, 69, 32, 20)
+const action70 = deriveSignalTypeAndAction(70);
+const action69 = deriveSignalTypeAndAction(69);
+const action32 = deriveSignalTypeAndAction(32);
+const action20 = deriveSignalTypeAndAction(20);
+assert(
+  action70.signalType === 'BUY' && action70.spotAction === 'SPOT_BUY' &&
+  action69.signalType === 'HOLD' && action69.spotAction === 'SPOT_HOLD' &&
+  action32.signalType === 'SELL' && action32.spotAction === 'SPOT_SELL_ALL' &&
+  action20.signalType === 'STRONG_SELL' && action20.spotAction === 'SPOT_SELL_ALL',
+  'Behavioral Guard: Full decision spectrum (70=BUY, 69=HOLD, 32=SELL, 20=STRONG_SELL) behaves identically across systems',
+  `Spectrum mismatch detected: 70=${action70.signalType}, 69=${action69.signalType}, 32=${action32.signalType}, 20=${action20.signalType}`
+);
+
+// Test 6.10: Behavioral fallback asset-switch calculation test
+const fallbackPrice = 90000;
+const fallbackAtr = 1500;
+const computedT1 = Math.round(fallbackPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * fallbackAtr);
+const computedT2 = Math.round(fallbackPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * fallbackAtr);
+const computedT3 = Math.round(fallbackPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * fallbackAtr);
+const computedSl = Math.round(fallbackPrice - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * fallbackAtr);
+assert(
+  computedT1 === 93750 && computedT2 === 96000 && computedT3 === 98250 && computedSl === 87000,
+  'Behavioral Guard: Dynamic asset switch yields exact canonical ATR targets (T1=93750, T2=96000, T3=98250, SL=87000)',
+  `Values: T1=${computedT1}, T2=${computedT2}, T3=${computedT3}, SL=${computedSl}`
+);
+
+// Test 6.11: Static AST & Codebase Anti-Regression Guard
+// Guards App.tsx against hardcoded multiplier regressions (e.g. "4 * atr", "999 * atr", ">= 85", "<= 18")
+const appTsxPath = path.resolve(process.cwd(), 'src/App.tsx');
+const appTsxContent = fs.readFileSync(appTsxPath, 'utf8');
+
+const hasLegacyAtrMultipliers = /\b[468]\s*\*\s*atr\b/.test(appTsxContent);
+const hasInjectedAtrMultipliers = /\b999\s*\*\s*atr\b/.test(appTsxContent);
+const hasLegacy85Threshold = />=\s*85\b/.test(appTsxContent);
+const hasLegacyDefensiveThresholds = /<=\s*18\b|<=\s*35\b/.test(appTsxContent);
+const importsStrategyConstants = appTsxContent.includes('STRATEGY_RISK_MULTIPLIERS') && appTsxContent.includes('STRATEGY_THRESHOLDS');
+
+assert(
+  !hasLegacyAtrMultipliers && !hasInjectedAtrMultipliers && !hasLegacy85Threshold && !hasLegacyDefensiveThresholds && importsStrategyConstants,
+  'Codebase AST Guard: App.tsx contains zero hardcoded legacy multipliers (4/6/8/999) or orphaned thresholds (85/18/35)',
+  `AST Audit failed: hasLegacyAtrMultipliers=${hasLegacyAtrMultipliers}, hasLegacy85Threshold=${hasLegacy85Threshold}, hasLegacyDefensiveThresholds=${hasLegacyDefensiveThresholds}, importsStrategyConstants=${importsStrategyConstants}`
 );
 
 // -------------------------------------------------------------

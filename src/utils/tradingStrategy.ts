@@ -48,12 +48,39 @@ export const ENTRY_QUALITY = {
   },
   
   stages: {
-    ideal: "دخول مثالي — مؤشرات متوافقة وارتداد عند الدعم (≥82)",
-    good: "دخول جيد — مؤشرات متوافقة (≥70)",
+    ideal: `دخول مثالي — مؤشرات متوافقة وارتداد عند الدعم (≥${STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE})`,
+    good: `دخول جيد — مؤشرات متوافقة (≥${STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE})`,
     wait: "انتظار — السعر بعيد عن الدعم (≥45)",
     skip: "لا دخول — جدار سيولة أو مؤشرات متعارضة (<45)",
   },
 };
+
+/**
+ * Derives canonical signalType and spotAction from adjusted conviction score
+ * Ensures 100% mathematical parity across Client UI and Backend Daemon
+ */
+export function deriveSignalTypeAndAction(adjustedConviction: number): {
+  signalType: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+  spotAction: 'SPOT_BUY' | 'SPOT_HOLD' | 'SPOT_SELL_ALL';
+} {
+  const signalType = adjustedConviction >= STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE
+    ? 'STRONG_BUY'
+    : adjustedConviction >= STRATEGY_THRESHOLDS.BUY_MIN_SCORE
+    ? 'BUY'
+    : adjustedConviction <= STRATEGY_THRESHOLDS.STRONG_SELL_MAX_SCORE
+    ? 'STRONG_SELL'
+    : adjustedConviction <= STRATEGY_THRESHOLDS.SELL_MAX_SCORE
+    ? 'SELL'
+    : 'HOLD';
+
+  const spotAction = adjustedConviction >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE
+    ? 'SPOT_BUY'
+    : adjustedConviction <= STRATEGY_THRESHOLDS.SELL_MAX_SCORE
+    ? 'SPOT_SELL_ALL'
+    : 'SPOT_HOLD';
+
+  return { signalType, spotAction };
+}
 
 // ══════════════════════════════════════════════════════════════
 // 📊 المؤشرات الفنية المستخدمة
