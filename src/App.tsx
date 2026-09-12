@@ -45,6 +45,7 @@ import {
   computeConfigChecksum, 
   detectConfigDiscrepancies 
 } from './utils/configChecksum';
+import { STRATEGY_RISK_MULTIPLIERS } from './constants/strategyConstants';
 import { generate1YearAssetData } from './utils/mockHistoricalData';
 import { calculateAllIndicators } from './utils/technicalAnalysis';
 import { analyzeSMC } from './utils/smcAnalysis';
@@ -459,18 +460,23 @@ export function App() {
                 updatedCandles[updatedCandles.length - 1] = last;
               }
 
-              // Recalculate indicators and update signal targets on real candles
+              // Recalculate indicators on real candles
               const calcInd = calculateAllIndicators(updatedCandles);
               const atr = calcInd.atr || (livePrice * 0.015);
               setAiSignal((prevSig) => {
                 if (!prevSig) return null;
+                // Preserve canonical targets computed by the strategy engine
+                if (prevSig.target1 && prevSig.target1 > 0 && prevSig.stopLoss && prevSig.stopLoss > 0) {
+                  return prevSig;
+                }
+                const entry = prevSig.entryPrice || Math.round(livePrice);
                 return {
                   ...prevSig,
-                  entryPrice: Math.round(livePrice),
-                  target1: Math.round(livePrice + 4 * atr),
-                  target2: Math.round(livePrice + 6 * atr),
-                  target3: Math.round(livePrice + 8 * atr),
-                  stopLoss: Math.round(livePrice - 2 * atr),
+                  entryPrice: entry,
+                  target1: Math.round(entry + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * atr),
+                  target2: Math.round(entry + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * atr),
+                  target3: Math.round(entry + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * atr),
+                  stopLoss: Math.round(entry - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * atr),
                 };
               });
 

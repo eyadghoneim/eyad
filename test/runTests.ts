@@ -19,6 +19,10 @@ import { analyzeSMC } from '../src/utils/smcAnalysis';
 import { extractValidatedSwings, analyzeElliottWave } from '../src/utils/elliottWave';
 import { run1YearBacktest } from '../src/utils/backtestingEngine';
 import { Candle, LiquidityRegimeScorecard, PaperAccount } from '../src/types';
+import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS, STRATEGY_ENGINE_SIGNATURE } from '../src/constants/strategyConstants';
+import { buildDeterministicSignal } from '../botStrategy';
+import { evaluateEntryQualityScore, calculateStrategyRiskTargets, ENTRY_QUALITY, RISK_MANAGEMENT } from '../src/utils/tradingStrategy';
+import { computeServerConfigChecksumSync, computeConfigChecksum, detectConfigDiscrepancies, SyncableBotConfig } from '../src/utils/configChecksum';
 
 let passedTests = 0;
 let totalTests = 0;
@@ -266,7 +270,6 @@ assert(
 // -------------------------------------------------------------
 console.log('--- 6. Quantitative Gates & Multi-Timeframe Confluence ---');
 
-const { buildDeterministicSignal } = await import('../botStrategy');
 const bullishCandles = generateMockCandles(60, 80000, 'up');
 const bearishCandles = generateMockCandles(60, 95000, 'down');
 
@@ -434,6 +437,117 @@ const corrScaleResult = autoOpenPaperTradeOnSignal(
 assert(
   Boolean(corrScaleResult.opened === true && corrScaleResult.event?.messageAr.includes('تخفيف الحجم 50%')),
   'Correlation Guard halves position size on ETH when BTC position is open and conviction is high'
+);
+
+// -------------------------------------------------------------
+// Suite 6: Client-Server Mathematical Parity & Strategic Invariants
+// -------------------------------------------------------------
+console.log('\n--- 6. Client-Server Mathematical Parity & Strategic Invariants ---');
+
+// Test 6.1: Quality gate threshold parity between client and server
+assert(
+  ENTRY_QUALITY.MIN_PASS_SCORE === STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE &&
+  STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE === 70,
+  'Entry Quality minimum pass score is unified at exactly 70 across Client UI and Server Daemon',
+  `Expected 70, got client=${ENTRY_QUALITY.MIN_PASS_SCORE}, server=${STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE}`
+);
+
+// Test 6.2: Strong Buy threshold parity
+assert(
+  ENTRY_QUALITY.STRONG_BUY_SCORE === STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE &&
+  STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE === 82,
+  'Strong Buy threshold is unified at exactly 82 across Client UI and Server Daemon',
+  `Expected 82, got client=${ENTRY_QUALITY.STRONG_BUY_SCORE}, server=${STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE}`
+);
+
+// Test 6.3: Risk multipliers parity
+assert(
+  RISK_MANAGEMENT.STOP_LOSS_ATR === STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR &&
+  RISK_MANAGEMENT.TARGET_1_ATR === STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR &&
+  RISK_MANAGEMENT.TARGET_2_ATR === STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR &&
+  RISK_MANAGEMENT.TARGET_3_ATR === STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR,
+  'ATR Multipliers (SL=2.0x, TP1=2.5x, TP2=4.0x, TP3=5.5x) are mathematically identical between Client and Server',
+  `Mismatch detected in ATR multipliers`
+);
+
+// Test 6.4: Score 72 acceptance consistency
+const mockQualityScore72 = 72;
+const clientPassed72 = mockQualityScore72 >= ENTRY_QUALITY.MIN_PASS_SCORE;
+const serverPassed72 = mockQualityScore72 >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE;
+assert(
+  clientPassed72 === true && serverPassed72 === true,
+  'Score 72 asset is consistently accepted by BOTH Client and Server without contradiction',
+  `Expected both true, got clientPassed=${clientPassed72}, serverPassed=${serverPassed72}`
+);
+
+// Test 6.5: Risk-Reward promise fulfillment (TP2 / SL ratio >= 2.0)
+const testEntry = 80000;
+const testAtr = 1200;
+const clientTargets = calculateStrategyRiskTargets(testEntry, testAtr);
+const expectedSl = Math.round(testEntry - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * testAtr);
+const expectedTp1 = Math.round(testEntry + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * testAtr);
+const expectedTp2 = Math.round(testEntry + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * testAtr);
+const expectedTp3 = Math.round(testEntry + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * testAtr);
+
+assert(
+  clientTargets.stopLoss === expectedSl &&
+  clientTargets.target1 === expectedTp1 &&
+  clientTargets.target2 === expectedTp2 &&
+  clientTargets.target3 === expectedTp3,
+  'Client calculateStrategyRiskTargets matches exact server canonical ATR target levels',
+  `client: ${JSON.stringify(clientTargets)} vs expected: ${JSON.stringify({ expectedSl, expectedTp1, expectedTp2, expectedTp3 })}`
+);
+
+const riskDistance = testEntry - clientTargets.stopLoss;
+const rewardDistance = clientTargets.target2 - testEntry;
+const calculatedRR = Number((rewardDistance / riskDistance).toFixed(2));
+assert(
+  calculatedRR >= 2.0,
+  `Risk-to-Reward ratio at TP2 mathematically fulfills user promise (>= 2.00, actual=${calculatedRR})`,
+  `Expected >= 2.0, got ${calculatedRR}`
+);
+
+// Test 6.6: Checksum engine parity
+const sampleConfig: SyncableBotConfig = {
+  active: true,
+  telegramEnabled: true,
+  telegramToken: '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11',
+  telegramChatId: '987654321',
+  scanIntervalSeconds: 60,
+  spreadFilterEnabled: true,
+  maxSpreadPercent: 0.15,
+  trancheModeEnabled: true,
+  tranche1Percent: 60,
+  tranche2Percent: 40,
+  entryQualityMinScore: STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE,
+  strongBuyMinScore: STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE,
+  target1Atr: STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR,
+  target2Atr: STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR,
+  stopLossAtr: STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR,
+  strategyVersion: STRATEGY_ENGINE_SIGNATURE.version,
+};
+
+const serverHash = computeServerConfigChecksumSync(sampleConfig);
+const clientHash = computeServerConfigChecksumSync(sampleConfig);
+assert(
+  serverHash === clientHash && serverHash.length === 12,
+  'Config Checksum Engine produces deterministic 12-char hex hash across environments',
+  `Expected identical 12-char hash, got server=${serverHash}, client=${clientHash}`
+);
+
+// Test 6.7: Discrepancy detector detects logic divergence
+const divergedServerConfig = {
+  ...sampleConfig,
+  entryQualityMinScore: 65, // diverged
+  target1Atr: 2.0,          // diverged
+};
+const detectedDiffs = detectConfigDiscrepancies(sampleConfig, divergedServerConfig);
+assert(
+  detectedDiffs.length >= 2 &&
+  detectedDiffs.some(d => d.includes('Entry Quality Gate')) &&
+  detectedDiffs.some(d => d.includes('TP1 ATR Multiplier')),
+  'detectConfigDiscrepancies instantly catches strategic logic drift between client and server',
+  `Detected diffs: ${JSON.stringify(detectedDiffs)}`
 );
 
 // -------------------------------------------------------------

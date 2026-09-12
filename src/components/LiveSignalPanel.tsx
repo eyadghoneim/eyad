@@ -22,6 +22,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { AIReasoning, ElliottWaveAnalysis, IndicatorValues, LiquiditySentimentData, SMCAnalysis, LearningState, SupportedAsset, MacroNewsStatus, EntryQualityScoreBreakdown } from '../types';
+import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS } from '../constants/strategyConstants';
 
 interface LiveSignalPanelProps {
   currentAsset?: SupportedAsset;
@@ -61,11 +62,11 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
   const isSell = hasSignal && signalType.includes('SELL');
   // Honest technical fallback targets derived mathematically from live ATR and EMA21
   const effectiveAtr = indicators.atr || (btcPrice * 0.015);
-  const technicalSl = Math.round(btcPrice - 2 * effectiveAtr);
-  const technicalTp1 = Math.round(btcPrice + 4 * effectiveAtr);
-  const technicalTp2 = Math.round(btcPrice + 6 * effectiveAtr);
-  const technicalTp3 = Math.round(btcPrice + 8 * effectiveAtr);
-  const technicalRR = 2.0;
+  const technicalSl = Math.round(btcPrice - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * effectiveAtr);
+  const technicalTp1 = Math.round(btcPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * effectiveAtr);
+  const technicalTp2 = Math.round(btcPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * effectiveAtr);
+  const technicalTp3 = Math.round(btcPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * effectiveAtr);
+  const technicalRR = Number((((technicalTp2 - btcPrice) / Math.max(btcPrice - technicalSl, 1)) || 2.0).toFixed(2));
 
   const entry = aiSignal?.entryPrice ?? (btcPrice > 0 ? Math.round(btcPrice) : null);
   const target1 = aiSignal?.target1 ?? (btcPrice > 0 ? technicalTp1 : null);
@@ -103,7 +104,7 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
       trendScore: Math.round(rawQuality * 0.20),
       signalScore: Math.round(rawQuality * 0.20),
       totalScore: rawQuality,
-      passed: rawQuality >= 70,
+      passed: rawQuality >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE,
     };
   } else {
     // Dynamically calculate from honest live technical indicators
@@ -134,7 +135,7 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
       trendScore,
       signalScore,
       totalScore,
-      passed: totalScore >= 70,
+      passed: totalScore >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE,
     };
   }
 
@@ -191,7 +192,7 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
             <Award className="w-3.5 h-3.5 text-amber-400" />
             <span>Gate: {quality.totalScore}/100</span>
             <span className="text-[10px] px-1 py-0.2 rounded bg-black/40">
-              {quality.passed ? (lang === 'ar' ? 'مؤهل' : 'Passed ≥70') : (lang === 'ar' ? 'مرفوض' : 'Blocked')}
+              {quality.passed ? (lang === 'ar' ? 'مؤهل' : `Passed ≥${STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE}`) : (lang === 'ar' ? 'مرفوض' : 'Blocked')}
             </span>
           </div>
 

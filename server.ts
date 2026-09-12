@@ -41,7 +41,9 @@ import {
   savePaperAccount,
   resetPaperAccount,
   ServerPaperAccount,
+  getPersistenceHealth,
 } from './botPersistence';
+import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS, STRATEGY_ENGINE_SIGNATURE } from './src/constants/strategyConstants';
 
 dotenv.config();
 
@@ -2725,6 +2727,12 @@ function getNormalizedCanonicalConfig(cfg: ServerBotConfig) {
       positionUpdates: true,
       dailyDigest: true,
     },
+    entryQualityMinScore: STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE,
+    strongBuyMinScore: STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE,
+    target1Atr: STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR,
+    target2Atr: STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR,
+    stopLossAtr: STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR,
+    strategyVersion: STRATEGY_ENGINE_SIGNATURE.version,
   };
 }
 
@@ -3096,6 +3104,8 @@ app.get('/api/bot/diagnostics', async (req, res) => {
       scanCount: botState.scanCount,
       lastKnownPrices: botState.lastKnownPrices,
     },
+    strategySignature: STRATEGY_ENGINE_SIGNATURE,
+    persistence: await getPersistenceHealth(),
     telegram: {
       enabled: botConfig.telegramEnabled,
       hasToken: Boolean(tokenToUse),

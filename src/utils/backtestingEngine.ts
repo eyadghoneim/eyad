@@ -4,6 +4,7 @@ import { analyzeSMC } from './smcAnalysis';
 import { analyzeElliottWave } from './elliottWave';
 import { evaluateEntryQualityScore, calculateStrategyRiskTargets, ENTRY_QUALITY } from './tradingStrategy';
 import { generate1YearAssetData } from './mockHistoricalData';
+import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS } from '../constants/strategyConstants';
 
 export function run1YearBacktest(
   candles: Candle[],
@@ -16,7 +17,7 @@ export function run1YearBacktest(
     useSMCFilter: true,
     useElliottWaveFilter: true,
     useSelfLearningFilter: true,
-    minConvictionThreshold: 75,
+    minConvictionThreshold: STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE,
   },
   asset: SupportedAsset = 'BTC'
 ): BacktestResult {
@@ -258,9 +259,9 @@ export function run1YearBacktest(
           partialSold = false;
           realizedTp1Cash = 0;
 
-          // Simple Risk Targets parameterized
-          const slMult = params.slAtrMultiplier || 1.5;
-          const tpMult = params.tpAtrMultiplier || 2.5;
+          // Simple Risk Targets parameterized with canonical multipliers
+          const slMult = params.slAtrMultiplier || STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR;
+          const tpMult = params.tpAtrMultiplier || STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR;
           const targetTp2 = executedEntryPrice + (effectiveAtr * tpMult);
           const targetSl = executedEntryPrice - (effectiveAtr * slMult);
 

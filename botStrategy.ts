@@ -2,6 +2,7 @@ import type { AIReasoning, Candle, LiquidityRegimeScorecard, SupportedAsset } fr
 import { analyzeElliottWave } from './src/utils/elliottWave';
 import { analyzeSMC } from './src/utils/smcAnalysis';
 import { calculateAllIndicators } from './src/utils/technicalAnalysis';
+import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS } from './src/constants/strategyConstants';
 
 export interface DeterministicSignalContext {
   asset: SupportedAsset;
@@ -212,20 +213,20 @@ export function buildDeterministicSignal({
   const hardBearish = indicators.emaTrend === 'STRONG_BEARISH' && (smc.marketStructure === 'BOS_BEARISH' || indicators.macd.trend === 'BEARISH_CROSS');
   const hardBullish = score >= 82 && indicators.adx >= 20 && indicators.macd.trend !== 'BEARISH_CROSS' && !isHtfBearishCountertrend && !isChopRegime;
 
-  if (hardBearish || score <= 32) {
-    signalType = score <= 20 ? 'STRONG_SELL' : 'SELL';
+  if (hardBearish || score <= STRATEGY_THRESHOLDS.DEFENSIVE_SELL_SCORE) {
+    signalType = score <= STRATEGY_THRESHOLDS.STRONG_SELL_SCORE ? 'STRONG_SELL' : 'SELL';
     spotAction = 'SPOT_SELL_ALL';
     summaryAr = `إشارة دفاعية على ${assetNameMap[asset].ar}: تراجع التوافق الفني والمؤسسي، لذلك الأفضل حماية رأس المال والخروج الكامل من مراكز السبوت.`;
     summaryEn = `Defensive ${assetNameMap[asset].en} signal: technical and institutional confluence deteriorated, so spot capital should rotate to cash.`;
-  } else if (isChopRegime && (score >= 56 || score + 14 >= 70)) {
+  } else if (isChopRegime && (score >= 56 || score + 14 >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE)) {
     // HARD REGIME GATE:
     // Even if other indicators are optimistic, buying in chop is the #1 killer due to spread and commission churn!
     signalType = 'NO_TRADE';
     spotAction = 'SPOT_HOLD';
     regimeGateStatus = 'CHOP_BLOCKED';
-    summaryAr = `حظر الدخول بفعل السوق العرضي (Regime Gate) على ${assetNameMap[asset].ar}: بالرغم من توفر بعض المؤشرات الإيجابية، إلا أن مؤشر قوة الاتجاه ضعيف جداً (ADX: ${indicators.adx.toFixed(1)} < 18). التداول في سوق مسطح يبتلع رأس المال بالعمولات والذبذبات الوهمية، لذا تم إلغاء الشراء كإجراء احترازي.`;
-    summaryEn = `Hard Regime Gate Triggered on ${assetNameMap[asset].en}: ADX indicates severe sideways chop (${indicators.adx.toFixed(1)} < 18). Trading in range consolidations leads to commission churn and false breakouts. Buy signal halted.`;
-  } else if (isHtfBearishCountertrend && (score >= 58 || score + 12 >= 70)) {
+    summaryAr = `حظر الدخول بفعل السوق العرضي (Regime Gate) على ${assetNameMap[asset].ar}: بالرغم من توفر بعض المؤشرات الإيجابية، إلا أن مؤشر قوة الاتجاه ضعيف جداً (ADX: ${indicators.adx.toFixed(1)} < ${STRATEGY_THRESHOLDS.ADX_CHOP_THRESHOLD}). التداول في سوق مسطح يبتلع رأس المال بالعمولات والذبذبات الوهمية، لذا تم إلغاء الشراء كإجراء احترازي.`;
+    summaryEn = `Hard Regime Gate Triggered on ${assetNameMap[asset].en}: ADX indicates severe sideways chop (${indicators.adx.toFixed(1)} < ${STRATEGY_THRESHOLDS.ADX_CHOP_THRESHOLD}). Trading in range consolidations leads to commission churn and false breakouts. Buy signal halted.`;
+  } else if (isHtfBearishCountertrend && (score >= 58 || score + 12 >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE)) {
     // MULTI-TIMEFRAME HIGHER TIMEFRAME GATE:
     // 1h bouncing while 4h is in a hard bear trend is a classic liquidity sucker
     signalType = 'NO_TRADE';
@@ -233,19 +234,19 @@ export function buildDeterministicSignal({
     regimeGateStatus = 'HTF_BLOCKED';
     summaryAr = `حظر الشراء المعاكس للاتجاه الأكبر (Multi-Timeframe 4h Guard) على ${assetNameMap[asset].ar}: إطار الـ 4 ساعات في اتجاه هابط صريح أسفل المتوسطات الرئيسية. أي صعود على فريم الساعة يُعد ارتداداً تصحيحياً عالي المخاطر تم الامتناع عن ملاحقته.`;
     summaryEn = `Multi-Timeframe 4h Guard on ${assetNameMap[asset].en}: 4h higher timeframe is strictly bearish below macro EMAs. Short-term 1h bounces against the dominant 4h trend are high-risk bull traps. Entry prevented.`;
-  } else if (isLowVolumeFakeout && (score >= 62 || score + 8 >= 70)) {
+  } else if (isLowVolumeFakeout && (score >= 62 || score + 8 >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE)) {
     // LOW VOLUME RVOL GATE:
     signalType = 'NO_TRADE';
     spotAction = 'SPOT_HOLD';
     regimeGateStatus = 'RVOL_BLOCKED';
     summaryAr = `حظر الكسر ضعيف الفوليوم (RVOL Guard) على ${assetNameMap[asset].ar}: حجم التداول الحالي ضعيف جداً (${rvol}x من المتوسط)، مما يدل على غياب السيولة المؤسسية وخطر الفخاخ السعرية.`;
     summaryEn = `Low-Volume Fakeout Guard on ${assetNameMap[asset].en}: Current volume is heavily depleted (${rvol}x of 20-period average). Lack of institutional volume indicates high risk of a bull trap.`;
-  } else if (hardBullish || score >= 70) {
-    signalType = score >= 82 ? 'STRONG_BUY' : 'BUY';
+  } else if (hardBullish || score >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE) {
+    signalType = score >= STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE ? 'STRONG_BUY' : 'BUY';
     spotAction = 'SPOT_BUY';
     summaryAr = `إشارة شراء على ${assetNameMap[asset].ar}: توافق قوي بين الاتجاه والزخم وتأكيد الحجم وهيكل الفريمات المتعددة، مع أفضلية مدروسة للدخول في السبوت.`;
     summaryEn = `Accumulation setup on ${assetNameMap[asset].en}: trend, momentum, volume, and multi-timeframe structure are aligned for a disciplined spot-only entry.`;
-  } else if (score < 45) {
+  } else if (score < STRATEGY_THRESHOLDS.WAIT_MIN_SCORE) {
     signalType = 'NO_TRADE';
     spotAction = 'SPOT_HOLD';
     summaryAr = `لا توجد أفضلية واضحة على ${assetNameMap[asset].ar}: السوق غير نظيف بما يكفي لفتح صفقة جديدة.`;
@@ -265,18 +266,24 @@ export function buildDeterministicSignal({
   const entryPrice = Number(price.toFixed(2));
   const isCandidateOrActiveBuy = spotAction === 'SPOT_BUY' || regimeGateStatus !== 'CLEAR';
   const stopLoss = isCandidateOrActiveBuy
-    ? Number(Math.max(price - atr * 2, price * 0.92).toFixed(2))
+    ? Number(Math.max(price - atr * STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR, price * (1 - STRATEGY_RISK_MULTIPLIERS.MAX_PRICE_DROP_STOP_LOSS_PCT)).toFixed(2))
     : spotAction === 'SPOT_SELL_ALL'
       ? Number((price * 1.02).toFixed(2))
       : 0;
-  const target1 = isCandidateOrActiveBuy ? Number((price + atr * 2.5).toFixed(2)) : 0;
-  const target2 = isCandidateOrActiveBuy ? Number((price + atr * 4).toFixed(2)) : 0;
-  const target3 = isCandidateOrActiveBuy ? Number((price + atr * 5.5).toFixed(2)) : 0;
+  const target1 = isCandidateOrActiveBuy ? Number((price + atr * STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR).toFixed(2)) : 0;
+  const target2 = isCandidateOrActiveBuy ? Number((price + atr * STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR).toFixed(2)) : 0;
+  const target3 = isCandidateOrActiveBuy ? Number((price + atr * STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR).toFixed(2)) : 0;
   const riskRewardRatio = isCandidateOrActiveBuy && stopLoss > 0
     ? Number((((target2 - price) / Math.max(price - stopLoss, 1)) || 0).toFixed(2))
     : 0;
 
-  const entryQualityStage: 'ideal' | 'good' | 'wait' | 'skip' = score >= 82 ? 'ideal' : score >= 70 ? 'good' : score >= 45 ? 'wait' : 'skip';
+  const entryQualityStage: 'ideal' | 'good' | 'wait' | 'skip' = score >= STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE
+    ? 'ideal'
+    : score >= STRATEGY_THRESHOLDS.BUY_MIN_SCORE
+      ? 'good'
+      : score >= STRATEGY_THRESHOLDS.WAIT_MIN_SCORE
+        ? 'wait'
+        : 'skip';
 
   const signal: AIReasoning & { status?: 'READY' | 'DEGRADED' } = {
     convictionScore: score,
@@ -303,7 +310,7 @@ export function buildDeterministicSignal({
     generatedAt: Date.now(),
     asset,
     entryQualityScore: score,
-    entryQualityPassed: score >= 70 && spotAction === 'SPOT_BUY',
+    entryQualityPassed: score >= STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE && spotAction === 'SPOT_BUY',
     entryQualityStage,
     whaleSentiment: change24h >= 1.5 ? 'ACCUMULATION' : change24h <= -2 ? 'DISTRIBUTION' : 'NEUTRAL',
     adxTrend: indicators.adx >= 25 ? 'STRONG_TREND' : 'WEAK_CHOPPY',

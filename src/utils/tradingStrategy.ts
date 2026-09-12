@@ -10,6 +10,8 @@
  * ══════════════════════════════════════════════════════════════
  */
 
+import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS } from '../constants/strategyConstants';
+
 // ══════════════════════════════════════════════════════════════
 // 📋 القواعد العامة
 // ══════════════════════════════════════════════════════════════
@@ -33,7 +35,9 @@ export type SupportedAsset = typeof GENERAL_RULES.assets[number];
 // ══════════════════════════════════════════════════════════════
 
 export const ENTRY_QUALITY = {
-  minimumScore: 75,                        // الحد الأدنى لجودة الدخول (كان55)
+  minimumScore: STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE, // الحد الأدنى لجودة الدخول (70)
+  MIN_PASS_SCORE: STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE,
+  STRONG_BUY_SCORE: STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE,
   
   components: {
     priceNearEma21: 25,                    // السعر قريب من EMA21 (ارتداد)
@@ -44,10 +48,10 @@ export const ENTRY_QUALITY = {
   },
   
   stages: {
-    ideal: "دخول مثالي — مؤشرات متوافقة وارتداد عند الدعم",
-    good: "دخول جيد — مؤشرات متوافقة",
-    wait: "انتظار — السعر بعيد عن الدعم",
-    skip: "لا دخول — جدار سيولة أو مؤشرات متعارضة",
+    ideal: "دخول مثالي — مؤشرات متوافقة وارتداد عند الدعم (≥82)",
+    good: "دخول جيد — مؤشرات متوافقة (≥70)",
+    wait: "انتظار — السعر بعيد عن الدعم (≥45)",
+    skip: "لا دخول — جدار سيولة أو مؤشرات متعارضة (<45)",
   },
 };
 
@@ -88,28 +92,32 @@ export const INDICATORS = {
 // ══════════════════════════════════════════════════════════════
 
 export const RISK_MANAGEMENT = {
-  riskPerTrade: "2% من الرصيد",
+  riskPerTrade: `${STRATEGY_RISK_MULTIPLIERS.MAX_PORTFOLIO_RISK_PER_TRADE}% من الرصيد`,
+  STOP_LOSS_ATR: STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR,
+  TARGET_1_ATR: STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR,
+  TARGET_2_ATR: STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR,
+  TARGET_3_ATR: STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR,
   
   stopLoss: {
-    atrMultiplier: 2,                      // وقف = السعر - 2×ATR (كان1.5)
+    atrMultiplier: STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR, // وقف = السعر - 2×ATR
   },
   
   takeProfit: {
-    tp1Multiplier: 4,                      // TP1 = السعر + 4×ATR
-    tp2Multiplier: 6,                      // TP2 = السعر + 6×ATR
-    strongTrendTp2Multiplier: 8,           // في اتجاه قوي → TP2 = 8×ATR
+    tp1Multiplier: STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR,   // TP1 = السعر + 2.5×ATR
+    tp2Multiplier: STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR,   // TP2 = السعر + 4.0×ATR
+    strongTrendTp2Multiplier: STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR, // في اتجاه قوي → TP3 = 5.5×ATR
   },
   
   trailingStop: {
-    percentage: "2%",                      // بعد TP1 → وقف متحرك2%
+    percentage: `${STRATEGY_RISK_MULTIPLIERS.TRAILING_STOP_PERCENT}%`, // بعد TP1 → وقف متحرك 2%
   },
   
   partialProfit: {
-    tp1SellPercentage: 50,                 // لما TP1 يتحقق → يبيع50%
+    tp1SellPercentage: STRATEGY_RISK_MULTIPLIERS.PARTIAL_EXIT_TP1_PERCENT, // لما TP1 يتحقق → يبيع 50%
   },
   
-  dailyDrawdownLimit: "5% من الرصيد",
-  // لو خسر3 صفقات ورا بعض → وضع الحماية24 ساعة
+  dailyDrawdownLimit: `${STRATEGY_RISK_MULTIPLIERS.MAX_DRAWDOWN_LIMIT_PERCENT}% من الرصيد`,
+  // لو خسر 3 صفقات ورا بعض → وضع الحماية 24 ساعة
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -121,8 +129,8 @@ export const PROTECTION_LAYERS = [
     id: "entry_quality_gate",
     name: "Entry Quality Gate",
     nameAr: "بوابة جودة الدخول",
-    description: "لو جودة الدخول أقل من 75 → يرفض فتح الصفقة",
-    threshold: 75,
+    description: `لو جودة الدخول أقل من ${STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE} → يرفض فتح الصفقة`,
+    threshold: STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE,
     icon: "ShieldCheck",
   },
   {
@@ -264,7 +272,7 @@ export const GOLDEN_RULES_LIST = [
   { num: 3, textAr: "لا ترصد إشارة لو فيه جدار بيع ضخم في دفتر الأوامر", textEn: "Avoid signaling against heavy ask wall barriers" },
   { num: 4, textAr: "لا ترصد إشارة أثناء الأحداث الاقتصادية الكبرى (CPI, FOMC)", textEn: "Freeze entries around high-impact macro news releases" },
   { num: 5, textAr: "لو فشل الرصد 3 مرات متتالية → وضع الحماية والتوقف 24 ساعة", textEn: "3 consecutive invalidations triggers 24h protection cooldown" },
-  { num: 6, textAr: "الهدف أبعد من الوقف بـ 2.7 مرة على الأقل (2x ATR SL مقابل 4x/6x ATR TP)", textEn: "Reward-to-risk minimum 2.7 (2x ATR SL vs 4x/6x ATR TP)" },
+  { num: 6, textAr: `الهدف أبعد من الوقف بنسبة مدروسة (${STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR}x ATR SL مقابل ${STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR}x/${STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR}x ATR TP)`, textEn: `Risk-adjusted targets (${STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR}x ATR SL vs ${STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR}x/${STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR}x ATR TP)` },
   { num: 7, textAr: "تعلم من أخطائك — المحرك بيعدل ثقته تلقائياً ويوثق الدروس", textEn: "Self-correcting AI memory logs mistakes and adapts rules" },
   { num: 8, textAr: "لا يوجد Short إطلاقاً — المحرك يرصد السبوت فقط", textEn: "Strictly Spot analysis only — zero shorting or liquidation risk" },
   { num: 9, textAr: "إشارة واحدة فقط في اليوم لكل أصل بفاصل 24 ساعة", textEn: "Maximum 1 signal per asset per 24 hours" },
@@ -325,9 +333,9 @@ export function evaluateEntryQualityScore(
   const totalScore = Math.min(100, Math.max(0, score));
 
   let stage: 'ideal' | 'good' | 'wait' | 'skip' = 'skip';
-  if (totalScore >= 85) stage = 'ideal';
-  else if (totalScore >= 75) stage = 'good';
-  else if (totalScore >= 55) stage = 'wait';
+  if (totalScore >= STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE) stage = 'ideal';
+  else if (totalScore >= STRATEGY_THRESHOLDS.BUY_MIN_SCORE) stage = 'good';
+  else if (totalScore >= STRATEGY_THRESHOLDS.WAIT_MIN_SCORE) stage = 'wait';
   else stage = 'skip';
 
   return {
@@ -350,27 +358,30 @@ export function evaluateEntryQualityScore(
  */
 export function calculateStrategyRiskTargets(price: number, atr: number, isStrongTrend: boolean = false) {
   const effectiveAtr = atr > 0 ? atr : price * 0.015;
-  const stopLoss = Math.round(price - 2 * effectiveAtr);
-  const tp1 = Math.round(price + 4 * effectiveAtr);
-  const tp2Multiplier = isStrongTrend ? 8 : 6;
+  const stopLoss = Math.round(price - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * effectiveAtr);
+  const tp1 = Math.round(price + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * effectiveAtr);
+  const tp2Multiplier = isStrongTrend ? STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR : STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR;
   const tp2 = Math.round(price + tp2Multiplier * effectiveAtr);
-  const tp3 = Math.round(price + 10 * effectiveAtr);
+  const tp3 = Math.round(price + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * effectiveAtr);
 
   const slRiskPercent = Number((((price - stopLoss) / price) * 100).toFixed(2));
   const tp1RewardPercent = Number((((tp1 - price) / price) * 100).toFixed(2));
   const tp2RewardPercent = Number((((tp2 - price) / price) * 100).toFixed(2));
-  const riskRewardRatio = Number((tp1RewardPercent / slRiskPercent).toFixed(2));
+  const riskRewardRatio = Number((((tp2 - price) / Math.max(price - stopLoss, 1)) || 0).toFixed(2));
 
   return {
     stopLoss,
     slRiskPercent,
     tp1,
+    target1: tp1,
     tp1RewardPercent,
     tp2,
+    target2: tp2,
     tp2RewardPercent,
     tp3,
-    riskRewardRatio: Math.max(2.0, riskRewardRatio || 2.7),
-    trailingStopPercent: 2.0,
-    partialSellPercent: 50,
+    target3: tp3,
+    riskRewardRatio: Math.max(2.0, riskRewardRatio || 2.0),
+    trailingStopPercent: STRATEGY_RISK_MULTIPLIERS.TRAILING_STOP_PERCENT,
+    partialSellPercent: STRATEGY_RISK_MULTIPLIERS.PARTIAL_EXIT_TP1_PERCENT,
   };
 }

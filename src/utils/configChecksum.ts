@@ -1,5 +1,6 @@
 // Configuration Checksum & Bi-directional Synchronization Engine
 // Ensures 100% real-time mathematical parity between LocalStorage and Backend Daemon Bot
+import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS, STRATEGY_ENGINE_SIGNATURE } from '../constants/strategyConstants';
 
 export interface SyncableBotConfig {
   active: boolean;
@@ -23,6 +24,12 @@ export interface SyncableBotConfig {
   bannedTradingHours?: number[];
   adaptiveRulesCount?: number;
   paperAutoExecute?: boolean;
+  entryQualityMinScore?: number;
+  strongBuyMinScore?: number;
+  target1Atr?: number;
+  target2Atr?: number;
+  stopLossAtr?: number;
+  strategyVersion?: string;
 }
 
 export interface ConfigChecksumReport {
@@ -43,6 +50,7 @@ export interface ConfigChecksumReport {
     adaptiveRulesCount: number;
     bannedHoursCount: number;
     paperAutoExecute: boolean;
+    strategyParity: boolean;
   };
 }
 
@@ -68,39 +76,7 @@ export function canonicalizeConfig(obj: Record<string, any>): string {
 }
 
 /**
- * Deterministic Hex Checksum generator (SHA-256 with fallback to FNV-1a)
- */
-export async function computeConfigChecksum(config: Record<string, any>): Promise<string> {
-  const canonicalString = canonicalizeConfig(config);
-
-  try {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      const msgBuffer = new TextEncoder().encode(canonicalString);
-      const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
-    }
-  } catch {
-    // fallback
-  }
-
-  // Pure JavaScript FNV-1a 64-bit style hash fallback
-  let h1 = 0x811c9dc5;
-  let h2 = 0x84222325;
-  for (let i = 0; i < canonicalString.length; i++) {
-    const ch = canonicalString.charCodeAt(i);
-    h1 ^= ch;
-    h1 = Math.imul(h1, 0x01000193);
-    h2 ^= ch;
-    h2 = Math.imul(h2, 0x01000193);
-  }
-  const part1 = (h1 >>> 0).toString(16).padStart(8, '0');
-  const part2 = (h2 >>> 0).toString(16).padStart(8, '0');
-  return `${part1}${part2}`.slice(0, 12);
-}
-
-/**
- * Synchronous Checksum generator for Node.js / server-side runtime
+ * Deterministic Hex Checksum generator (FNV-1a 64-bit aligned with server)
  */
 export function computeServerConfigChecksumSync(config: Record<string, any>): string {
   const canonicalString = canonicalizeConfig(config);
@@ -118,8 +94,12 @@ export function computeServerConfigChecksumSync(config: Record<string, any>): st
   return `${part1}${part2}`.slice(0, 12);
 }
 
+export async function computeConfigChecksum(config: Record<string, any>): Promise<string> {
+  return computeServerConfigChecksumSync(config);
+}
+
 /**
- * Extracts unified syncable config snapshot from client LocalStorage
+ * Extracts unified syncable config snapshot from client LocalStorage and Canonical Strategy
  */
 export function extractLocalSyncableConfig(): SyncableBotConfig {
   let telegramToken = '';
@@ -185,6 +165,12 @@ export function extractLocalSyncableConfig(): SyncableBotConfig {
     bannedTradingHours,
     adaptiveRulesCount,
     paperAutoExecute,
+    entryQualityMinScore: STRATEGY_THRESHOLDS.ENTRY_QUALITY_MIN_SCORE,
+    strongBuyMinScore: STRATEGY_THRESHOLDS.STRONG_BUY_MIN_SCORE,
+    target1Atr: STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR,
+    target2Atr: STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR,
+    stopLossAtr: STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR,
+    strategyVersion: STRATEGY_ENGINE_SIGNATURE.version,
   };
 }
 
@@ -224,6 +210,26 @@ export function detectConfigDiscrepancies(
 
   if (server.trancheModeEnabled !== undefined && local.trancheModeEnabled !== Boolean(server.trancheModeEnabled)) {
     diffs.push(`Tranche Mode: local=${local.trancheModeEnabled}, server=${Boolean(server.trancheModeEnabled)}`);
+  }
+
+  // Strategy Core Constants Parity
+  if (server.entryQualityMinScore !== undefined && local.entryQualityMinScore !== server.entryQualityMinScore) {
+    diffs.push(`Entry Quality Gate: local=${local.entryQualityMinScore}, server=${server.entryQualityMinScore}`);
+  }
+  if (server.strongBuyMinScore !== undefined && local.strongBuyMinScore !== server.strongBuyMinScore) {
+    diffs.push(`Strong Buy Threshold: local=${local.strongBuyMinScore}, server=${server.strongBuyMinScore}`);
+  }
+  if (server.target1Atr !== undefined && local.target1Atr !== server.target1Atr) {
+    diffs.push(`TP1 ATR Multiplier: local=${local.target1Atr}x, server=${server.target1Atr}x`);
+  }
+  if (server.target2Atr !== undefined && local.target2Atr !== server.target2Atr) {
+    diffs.push(`TP2 ATR Multiplier: local=${local.target2Atr}x, server=${server.target2Atr}x`);
+  }
+  if (server.stopLossAtr !== undefined && local.stopLossAtr !== server.stopLossAtr) {
+    diffs.push(`Stop Loss ATR Multiplier: local=${local.stopLossAtr}x, server=${server.stopLossAtr}x`);
+  }
+  if (server.strategyVersion !== undefined && local.strategyVersion !== server.strategyVersion) {
+    diffs.push(`Strategy Engine Version: local=${local.strategyVersion}, server=${server.strategyVersion}`);
   }
 
   return diffs;
