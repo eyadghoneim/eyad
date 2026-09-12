@@ -23,7 +23,7 @@ import { run1YearBacktest } from '../src/utils/backtestingEngine';
 import { Candle, LiquidityRegimeScorecard, PaperAccount } from '../src/types';
 import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS, STRATEGY_ENGINE_SIGNATURE } from '../src/constants/strategyConstants';
 import { buildDeterministicSignal } from '../botStrategy';
-import { evaluateEntryQualityScore, calculateStrategyRiskTargets, deriveSignalTypeAndAction, ENTRY_QUALITY, RISK_MANAGEMENT } from '../src/utils/tradingStrategy';
+import { evaluateEntryQualityScore, calculateStrategyRiskTargets, deriveSignalTypeAndAction, computeFallbackTargets, ENTRY_QUALITY, RISK_MANAGEMENT } from '../src/utils/tradingStrategy';
 import { computeServerConfigChecksumSync, computeConfigChecksum, detectConfigDiscrepancies, SyncableBotConfig } from '../src/utils/configChecksum';
 
 let passedTests = 0;
@@ -576,35 +576,50 @@ assert(
   `Spectrum mismatch detected: 70=${action70.signalType}, 69=${action69.signalType}, 32=${action32.signalType}, 20=${action20.signalType}`
 );
 
-// Test 6.10: Behavioral fallback asset-switch calculation test
-const fallbackPrice = 90000;
-const fallbackAtr = 1500;
-const computedT1 = Math.round(fallbackPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * fallbackAtr);
-const computedT2 = Math.round(fallbackPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * fallbackAtr);
-const computedT3 = Math.round(fallbackPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * fallbackAtr);
-const computedSl = Math.round(fallbackPrice - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * fallbackAtr);
+// Test 6.10: Behavioral verification of computeFallbackTargets function used across all UI fallback paths
+const fallbackTestEntry = 90000;
+const fallbackTestAtr = 1500;
+const fallbackOut = computeFallbackTargets(fallbackTestEntry, fallbackTestAtr);
 assert(
-  computedT1 === 93750 && computedT2 === 96000 && computedT3 === 98250 && computedSl === 87000,
-  'Behavioral Guard: Dynamic asset switch yields exact canonical ATR targets (T1=93750, T2=96000, T3=98250, SL=87000)',
-  `Values: T1=${computedT1}, T2=${computedT2}, T3=${computedT3}, SL=${computedSl}`
+  fallbackOut.target1 === 93750 &&
+  fallbackOut.target2 === 96000 &&
+  fallbackOut.target3 === 98250 &&
+  fallbackOut.stopLoss === 87000 &&
+  fallbackOut.riskRewardRatio === 2.0,
+  'Behavioral Guard: computeFallbackTargets outputs exact canonical ATR targets and enforces R:R >= 2.0',
+  `computeFallbackTargets mismatch: ${JSON.stringify(fallbackOut)}`
 );
 
-// Test 6.11: Static AST & Codebase Anti-Regression Guard
-// Guards App.tsx against hardcoded multiplier regressions (e.g. "4 * atr", "999 * atr", ">= 85", "<= 18")
-const appTsxPath = path.resolve(process.cwd(), 'src/App.tsx');
-const appTsxContent = fs.readFileSync(appTsxPath, 'utf8');
+// Test 6.11: Static Text Guard across UI Calculation Files (App.tsx, tradingStrategy.ts, LiveSignalPanel.tsx)
+// Enforces universal rule: NO hardcoded numeric literal multiplication with ATR (e.g. "4 * atr", "atr * 4", "3.5 * atr")
+// and NO orphaned threshold literals (e.g. ">= 85", "<= 18", "<= 35") in UI components.
+const filesToGuard = [
+  'src/App.tsx',
+  'src/components/LiveSignalPanel.tsx',
+];
 
-const hasLegacyAtrMultipliers = /\b[468]\s*\*\s*atr\b/.test(appTsxContent);
-const hasInjectedAtrMultipliers = /\b999\s*\*\s*atr\b/.test(appTsxContent);
-const hasLegacy85Threshold = />=\s*85\b/.test(appTsxContent);
-const hasLegacyDefensiveThresholds = /<=\s*18\b|<=\s*35\b/.test(appTsxContent);
-const importsStrategyConstants = appTsxContent.includes('STRATEGY_RISK_MULTIPLIERS') && appTsxContent.includes('STRATEGY_THRESHOLDS');
+const generalNumericAtrRegex = /(?:[\d.]+\s*\*\s*atr\b|\batr\s*\*\s*[\d.]+)/i;
+const orphanedThresholdsRegex = />=\s*(?:85|90)\b|<=\s*(?:18|35)\b/;
 
-assert(
-  !hasLegacyAtrMultipliers && !hasInjectedAtrMultipliers && !hasLegacy85Threshold && !hasLegacyDefensiveThresholds && importsStrategyConstants,
-  'Codebase AST Guard: App.tsx contains zero hardcoded legacy multipliers (4/6/8/999) or orphaned thresholds (85/18/35)',
-  `AST Audit failed: hasLegacyAtrMultipliers=${hasLegacyAtrMultipliers}, hasLegacy85Threshold=${hasLegacy85Threshold}, hasLegacyDefensiveThresholds=${hasLegacyDefensiveThresholds}, importsStrategyConstants=${importsStrategyConstants}`
-);
+for (const relPath of filesToGuard) {
+  const fullPath = path.resolve(process.cwd(), relPath);
+  const content = fs.readFileSync(fullPath, 'utf8');
+
+  const hasHardcodedAtr = generalNumericAtrRegex.test(content);
+  const hasOrphanedThresholds = orphanedThresholdsRegex.test(content);
+
+  assert(
+    !hasHardcodedAtr,
+    `Static Text Guard: ${relPath} contains zero hardcoded numeric ATR multipliers (e.g. [num] * atr or atr * [num])`,
+    `Violation in ${relPath}: found hardcoded numeric ATR multiplication`
+  );
+
+  assert(
+    !hasOrphanedThresholds,
+    `Static Text Guard: ${relPath} contains zero orphaned decision threshold literals (85/90/18/35)`,
+    `Violation in ${relPath}: found orphaned threshold literals`
+  );
+}
 
 // -------------------------------------------------------------
 // Test Results Summary

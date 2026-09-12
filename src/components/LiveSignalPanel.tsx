@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AIReasoning, ElliottWaveAnalysis, IndicatorValues, LiquiditySentimentData, SMCAnalysis, LearningState, SupportedAsset, MacroNewsStatus, EntryQualityScoreBreakdown } from '../types';
 import { STRATEGY_THRESHOLDS, STRATEGY_RISK_MULTIPLIERS } from '../constants/strategyConstants';
+import { computeFallbackTargets } from '../utils/tradingStrategy';
 
 interface LiveSignalPanelProps {
   currentAsset?: SupportedAsset;
@@ -60,13 +61,13 @@ export const LiveSignalPanel: React.FC<LiveSignalPanelProps> = ({
   const conviction = aiSignal?.convictionScore ?? 0;
   const isBuy = hasSignal && signalType.includes('BUY');
   const isSell = hasSignal && signalType.includes('SELL');
-  // Honest technical fallback targets derived mathematically from live ATR and EMA21
-  const effectiveAtr = indicators.atr || (btcPrice * 0.015);
-  const technicalSl = Math.round(btcPrice - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * effectiveAtr);
-  const technicalTp1 = Math.round(btcPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * effectiveAtr);
-  const technicalTp2 = Math.round(btcPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * effectiveAtr);
-  const technicalTp3 = Math.round(btcPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * effectiveAtr);
-  const technicalRR = Number((((technicalTp2 - btcPrice) / Math.max(btcPrice - technicalSl, 1)) || 2.0).toFixed(2));
+  // Honest technical fallback targets derived mathematically from canonical strategy engine
+  const fallbackCalc = computeFallbackTargets(btcPrice, indicators.atr || 0);
+  const technicalSl = fallbackCalc.stopLoss;
+  const technicalTp1 = fallbackCalc.target1;
+  const technicalTp2 = fallbackCalc.target2;
+  const technicalTp3 = fallbackCalc.target3;
+  const technicalRR = fallbackCalc.riskRewardRatio;
 
   const entry = aiSignal?.entryPrice ?? (btcPrice > 0 ? Math.round(btcPrice) : null);
   const target1 = aiSignal?.target1 ?? (btcPrice > 0 ? technicalTp1 : null);

@@ -55,7 +55,7 @@ import { run1YearBacktest } from './utils/backtestingEngine';
 import { evaluatePaperPositionsAuto, autoOpenPaperTradeOnSignal, AutoTradeExecutionResult } from './utils/paperTradingEngine';
 import { getBotAdminHeaders } from './utils/botAdminAuth';
 import { QuantRiskDashboard } from './components/QuantRiskDashboard';
-import { deriveSignalTypeAndAction } from './utils/tradingStrategy';
+import { deriveSignalTypeAndAction, computeFallbackTargets } from './utils/tradingStrategy';
 import { Activity, BarChart2, BrainCircuit, Sparkles, CheckCircle2, ShieldCheck, Code2, Wallet, Layers, Calendar, Flame, Columns, Radio, Cpu } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -460,13 +460,15 @@ export function App() {
                   return prevSig;
                 }
                 const entry = prevSig.entryPrice || Math.round(livePrice);
+                const targets = computeFallbackTargets(entry, atr);
                 return {
                   ...prevSig,
                   entryPrice: entry,
-                  target1: Math.round(entry + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * atr),
-                  target2: Math.round(entry + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * atr),
-                  target3: Math.round(entry + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * atr),
-                  stopLoss: Math.round(entry - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * atr),
+                  target1: targets.target1,
+                  target2: targets.target2,
+                  target3: targets.target3,
+                  stopLoss: targets.stopLoss,
+                  riskRewardRatio: targets.riskRewardRatio,
                 };
               });
 
@@ -556,15 +558,18 @@ export function App() {
       },
     };
 
+    const fallbackTargets = computeFallbackTargets(defaultPrice, atr);
+
     setAiSignal((prev) => {
       if (!prev) return null;
       return {
         ...prev,
-        entryPrice: Math.round(defaultPrice),
-        target1: Math.round(defaultPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * atr),
-        target2: Math.round(defaultPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * atr),
-        target3: Math.round(defaultPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * atr),
-        stopLoss: Math.round(defaultPrice - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * atr),
+        entryPrice: fallbackTargets.entryPrice,
+        target1: fallbackTargets.target1,
+        target2: fallbackTargets.target2,
+        target3: fallbackTargets.target3,
+        stopLoss: fallbackTargets.stopLoss,
+        riskRewardRatio: fallbackTargets.riskRewardRatio,
         summaryAr: summaries[asset].ar,
         summaryEn: summaries[asset].en,
       };

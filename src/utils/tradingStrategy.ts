@@ -381,6 +381,28 @@ export function evaluateEntryQualityScore(
 }
 
 /**
+ * Computes canonical fallback ATR targets for UI state updates (Dynamic Asset switch or Offline Fallback)
+ * Centralizes all target/stop calculations into a single tested mathematical function.
+ */
+export function computeFallbackTargets(entryPrice: number, atr: number) {
+  const effectiveAtr = atr > 0 ? atr : entryPrice * 0.015;
+  const target1 = Math.round(entryPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_1_ATR * effectiveAtr);
+  const target2 = Math.round(entryPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_2_ATR * effectiveAtr);
+  const target3 = Math.round(entryPrice + STRATEGY_RISK_MULTIPLIERS.TARGET_3_ATR * effectiveAtr);
+  const stopLoss = Math.round(entryPrice - STRATEGY_RISK_MULTIPLIERS.STOP_LOSS_ATR * effectiveAtr);
+  const riskRewardRatio = Number((((target2 - entryPrice) / Math.max(entryPrice - stopLoss, 1)) || 2.0).toFixed(2));
+
+  return {
+    entryPrice: Math.round(entryPrice),
+    target1,
+    target2,
+    target3,
+    stopLoss,
+    riskRewardRatio: Math.max(2.0, riskRewardRatio),
+  };
+}
+
+/**
  * Calculates exact ATR-based Stop Loss & Take Profits
  */
 export function calculateStrategyRiskTargets(price: number, atr: number, isStrongTrend: boolean = false) {
