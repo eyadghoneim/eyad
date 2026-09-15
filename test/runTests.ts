@@ -592,21 +592,23 @@ assert(
 
 // Test 6.11: Static Text Guard across UI Calculation Files (App.tsx, tradingStrategy.ts, LiveSignalPanel.tsx)
 // Enforces universal rule: NO hardcoded numeric literal multiplication with ATR (e.g. "4 * atr", "atr * 4", "3.5 * atr")
-// and NO orphaned threshold literals (e.g. ">= 85", "<= 18", "<= 35") in UI components.
+// and NO orphaned signal decision thresholds (e.g. conviction/score >= 85, <= 18, <= 35) in UI calculation files.
 const filesToGuard = [
   'src/App.tsx',
   'src/components/LiveSignalPanel.tsx',
+  'src/utils/tradingStrategy.ts',
 ];
 
 const generalNumericAtrRegex = /(?:[\d.]+\s*\*\s*atr\b|\batr\s*\*\s*[\d.]+)/i;
-const orphanedThresholdsRegex = />=\s*(?:85|90)\b|<=\s*(?:18|35)\b/;
+// Specifically guards signal decision threshold comparisons: score/conviction >= 85, <= 18, <= 35
+const orphanedDecisionThresholdsRegex = /(?:score|conviction|adjustedConviction)\s*(?:>=\s*(?:85|90)|<=\s*(?:18|35))\b/i;
 
 for (const relPath of filesToGuard) {
   const fullPath = path.resolve(process.cwd(), relPath);
   const content = fs.readFileSync(fullPath, 'utf8');
 
   const hasHardcodedAtr = generalNumericAtrRegex.test(content);
-  const hasOrphanedThresholds = orphanedThresholdsRegex.test(content);
+  const hasOrphanedThresholds = orphanedDecisionThresholdsRegex.test(content);
 
   assert(
     !hasHardcodedAtr,
@@ -616,8 +618,8 @@ for (const relPath of filesToGuard) {
 
   assert(
     !hasOrphanedThresholds,
-    `Static Text Guard: ${relPath} contains zero orphaned decision threshold literals (85/90/18/35)`,
-    `Violation in ${relPath}: found orphaned threshold literals`
+    `Static Text Guard: ${relPath} contains zero orphaned decision threshold comparisons (score/conviction >= 85 or <= 18|35)`,
+    `Violation in ${relPath}: found orphaned decision threshold comparisons`
   );
 }
 

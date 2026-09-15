@@ -80,7 +80,7 @@ export const GeminiLessonsLearnedCard: React.FC<GeminiLessonsLearnedCardProps> =
     // Default initial institutional analysis
     const initialFallback: GeminiLessonsLearnedAnalysis = {
       analyzedAt: Date.now() - 1000 * 60 * 10,
-      modelUsed: 'gemini-3.7-flash',
+      modelUsed: 'gemini-3.1-flash-lite',
       totalTradesAnalyzed: trades.length || 45,
       winRate: 71,
       totalPnlUsd: 1640.80,

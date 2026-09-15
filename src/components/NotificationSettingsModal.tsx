@@ -76,7 +76,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   const handleTestTelegram = async () => {
     const canUseServerConfig = Boolean(config.serverHasTelegramToken && config.serverHasTelegramChatId);
     if (!canUseServerConfig && (!config.telegramToken.trim() || !config.telegramChatId.trim())) {
-      setTestResult({ success: false, message: lang === 'ar' ? 'أدخلي Bot Token و Chat ID أولاً أو استخدمي المحفوظ على السيرفر' : 'Enter Bot Token and Chat ID first, or use the stored server credentials.' });
+      setTestResult({ success: false, message: lang === 'ar' ? 'أدخل Bot Token و Chat ID أولاً أو استخدم المحفوظ على السيرفر' : 'Enter Bot Token and Chat ID first, or use stored server credentials.' });
       return;
     }
 
@@ -107,7 +107,13 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
           }));
         }
       } else {
-        setTestResult({ success: false, message: data.error || (lang === 'ar' ? 'فشل الاتصال بتلجرام.' : 'Telegram connection failed.') });
+        const errDetail = data.error || (lang === 'ar' ? 'فشل الاتصال بتلجرام.' : 'Telegram connection failed.');
+        setTestResult({
+          success: false,
+          message: lang === 'ar'
+            ? `فشل الاتصال بتلجرام: ${errDetail} (تأكد من صحة التوكن ورقم Chat ID وبدء محادثة مع البوت أولاً)`
+            : `Telegram connection failed: ${errDetail} (Ensure bot token & chat ID are correct and /start was sent to the bot)`,
+        });
       }
     } catch (e: any) {
       setTestResult({ success: false, message: e.message || 'Error communicating with Telegram' });
@@ -149,11 +155,20 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
           telegramChatId: prev.telegramChatId || (payload.telegramChatId as string) || '',
           telegramAlertTiers: data.config.telegramAlertTiers || prev.telegramAlertTiers,
         }));
+        onClose();
+      } else {
+        setTestResult({
+          success: false,
+          message: data.error || (lang === 'ar' ? 'فشل حفظ الإعدادات على السيرفر' : 'Failed to save config to server'),
+        });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Failed to save config to server:', e);
+      setTestResult({
+        success: false,
+        message: e?.message || (lang === 'ar' ? 'فشل حفظ الإعدادات على السيرفر' : 'Failed to save config to server'),
+      });
     }
-    onClose();
   };
 
   const handleSendDailyDigest = async () => {
